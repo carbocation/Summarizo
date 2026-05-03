@@ -106,6 +106,15 @@ struct PaperDetailView: View {
                 metadataRow("Prompt tokens", diagnostic.promptTokens.map { $0.formatted() } ?? "")
                 metadataRow("Generated tokens", diagnostic.generatedTokens.map { $0.formatted() } ?? "")
                 metadataRow("Stop reason", diagnostic.stopReason ?? "")
+                metadataRow("Location", diagnostic.locationStrategy ?? "")
+                metadataRow("Selector calls", diagnostic.locationSelectorCalls.map { $0.formatted() } ?? "")
+                metadataRow("Location prompt tokens", diagnostic.locationPromptTokens.map { $0.formatted() } ?? "")
+                metadataRow("Location generated tokens", diagnostic.locationGeneratedTokens.map { $0.formatted() } ?? "")
+                metadataRow("Location duration", locationDurationText(diagnostic.locationDurationSeconds))
+                metadataRow("Location start", diagnostic.locationStartPercent.map { "\($0)%" } ?? "")
+                metadataRow("Location length", diagnostic.locationLengthChars.map { "\($0.formatted()) chars" } ?? "")
+                metadataRow("Selected paragraphs", selectedParagraphText(diagnostic))
+                metadataRow("Location fallback", diagnostic.locationFallbackReason ?? "")
                 metadataRow("Error", diagnostic.error ?? paper.errorMessage ?? "")
             }
             if let preview = diagnostic.responsePreview?.nilIfBlank {
@@ -117,6 +126,18 @@ struct PaperDetailView: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private func locationDurationText(_ seconds: Double?) -> String {
+        guard let seconds else { return "" }
+        return "\(seconds.formatted(.number.precision(.fractionLength(1))))s"
+    }
+
+    private func selectedParagraphText(_ diagnostic: LLMDiagnostic) -> String {
+        guard let start = diagnostic.locationSelectedStartParagraph,
+              let end = diagnostic.locationSelectedEndParagraph
+        else { return "" }
+        return start == end ? start.formatted() : "\(start.formatted())-\(end.formatted())"
     }
 
     private func metadataRow(_ label: String, _ value: String) -> some View {

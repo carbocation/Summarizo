@@ -241,6 +241,221 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(result.diagnostics.last?.enableThinking, true)
     }
 
+    func testExpandedHeadingSelectionAvoidsSpanSelectorCall() async {
+        let engine = CapturingLLMEngine(response: #"{"start_id":1,"end_id":1,"confidence":"high"}"#)
+        let operations = summaryOperations(engine: engine)
+        let text = """
+        Abstract
+        This overview introduces the work.
+
+        Introduction
+        \("The introduction frames motivation and prior claims. ".repeated(30))
+
+        Patients and Methods
+        We enrolled participants, collected measurements, and fit prespecified models.
+
+        Results
+        The primary analysis compared model outputs with clinical measurements.
+
+        Discussion
+        The paper closes by describing implications and limitations.
+        """
+
+        let result = await operations.findMethodsResultsSlice(
+            in: text,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let options = await engine.capturedOptions()
+        XCTAssertEqual(options.count, 0)
+        XCTAssertEqual(result.strategy, .headingAnchored)
+        XCTAssertNotNil(result.startPercent)
+        XCTAssertEqual(result.selectedStartParagraphID, 2)
+        XCTAssertEqual(result.selectedEndParagraphID, 3)
+        XCTAssertEqual(result.lengthChars, result.slice?.count)
+        XCTAssertTrue(result.slice?.contains("Patients and Methods") == true)
+        XCTAssertTrue(result.slice?.contains("Results") == true)
+        XCTAssertFalse(result.slice?.contains("Discussion") == true)
+    }
+
+    func testStructuredAbstractHeadingsAreNotUsedAsMainBodyStart() async {
+        let engine = CapturingLLMEngine(response: #"{"start_id":1,"end_id":1,"confidence":"high"}"#)
+        let operations = summaryOperations(engine: engine)
+        let text = """
+        Abstract
+        \("The abstract frames the question and study context. ".repeated(18))
+
+        Methods
+        The abstract briefly says that samples were analyzed.
+
+        Results
+        The abstract briefly reports that associations were found.
+
+        Conclusions
+        The abstract says the result may be useful.
+
+        \("Additional front matter and keywords separate the abstract from the body. ".repeated(22))
+
+        Methods
+        The main body protocol enrolled participants, measured biomarkers, and fit prespecified models.
+
+        Results
+        The main body reports validation metrics and subgroup measurements.
+
+        Discussion
+        The paper closes by describing implications and limitations.
+        """
+
+        let result = await operations.findMethodsResultsSlice(
+            in: text,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let options = await engine.capturedOptions()
+        XCTAssertEqual(options.count, 0)
+        XCTAssertEqual(result.strategy, .headingAnchored)
+        XCTAssertNotNil(result.startPercent)
+        XCTAssertEqual(result.selectedStartParagraphID, 2)
+        XCTAssertEqual(result.selectedEndParagraphID, 3)
+        XCTAssertEqual(result.lengthChars, result.slice?.count)
+        XCTAssertTrue(result.slice?.contains("main body protocol") == true)
+        XCTAssertTrue(result.slice?.contains("validation metrics") == true)
+        XCTAssertFalse(result.slice?.contains("abstract briefly") == true)
+        XCTAssertFalse(result.slice?.contains("The abstract says") == true)
+    }
+
+    func testSpanSelectorUsesOneCallForUnheadedBody() async {
+        let engine = CapturingLLMEngine(response: #"{"start_id":2,"end_id":3,"confidence":"high"}"#)
+        let operations = summaryOperations(engine: engine)
+        let text = """
+        Introduction
+        \("The introduction discusses motivation and related claims. ".repeated(12))
+
+        We ran an assay protocol on held-out samples and recorded prespecified measurements.
+
+        The measured outcomes were compared against baseline systems and manual review.
+        """
+
+        let result = await operations.findMethodsResultsSlice(
+            in: text,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let options = await engine.capturedOptions()
+        let prompts = await engine.capturedPrompts()
+        XCTAssertEqual(options.count, 1)
+        XCTAssertEqual(result.strategy, .spanSelectorDetailed)
+        XCTAssertEqual(result.selectorCallCount, 1)
+        XCTAssertTrue(result.slice?.contains("assay protocol") == true)
+        XCTAssertTrue(result.slice?.contains("measured outcomes") == true)
+        XCTAssertFalse(prompts.first?.contains("Classify which part") == true)
+    }
+
+    func testSpanSelectorDetailedDoesNotSeeStructuredAbstractHeadings() async {
+        let engine = CapturingLLMEngine(response: #"{"start_id":2,"end_id":3,"confidence":"high"}"#)
+        let operations = summaryOperations(engine: engine)
+        let text = """
+        Abstract
+        \("The abstract frames the question and study context. ".repeated(18))
+
+        Methods
+        The abstract briefly says that samples were analyzed.
+
+        Results
+        The abstract briefly reports that associations were found.
+
+        Conclusions
+        The abstract says the result may be useful.
+
+        \("Additional front matter and keywords separate the abstract from the body. ".repeated(24))
+
+        We enrolled participants, measured biomarkers, and fit prespecified models.
+
+        The validation analysis reports metrics and subgroup measurements.
+        """
+
+        let result = await operations.findMethodsResultsSlice(
+            in: text,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let options = await engine.capturedOptions()
+        let prompt = await engine.capturedPrompts().first ?? ""
+        XCTAssertEqual(options.count, 1)
+        XCTAssertEqual(result.strategy, .spanSelectorDetailed)
+        XCTAssertFalse(prompt.contains("abstract briefly"))
+        XCTAssertFalse(prompt.contains("The abstract says"))
+        XCTAssertTrue(result.slice?.contains("measured biomarkers") == true)
+        XCTAssertTrue(result.slice?.contains("validation analysis") == true)
+        XCTAssertFalse(result.slice?.contains("abstract briefly") == true)
+    }
+
+    func testInvalidSpanSelectionFallsBackDeterministically() async {
+        let engine = CapturingLLMEngine(response: #"{"start_id":99,"end_id":100,"confidence":"high"}"#)
+        let operations = summaryOperations(engine: engine)
+        let text = """
+        Introduction
+        \("The introduction discusses motivation and related claims. ".repeated(12))
+
+        We ran a validation protocol and collected outcomes.
+
+        The results compared observed and predicted values.
+        """
+
+        let result = await operations.findMethodsResultsSlice(
+            in: text,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let options = await engine.capturedOptions()
+        XCTAssertEqual(options.count, 1)
+        XCTAssertEqual(result.strategy, .heuristicFallback)
+        XCTAssertEqual(result.selectorCallCount, 1)
+        XCTAssertEqual(result.fallbackReason, "invalid-detailed-span-selection")
+        XCTAssertNotNil(result.slice?.nilIfBlank)
+    }
+
+    func testLongUnheadedBodyUsesCoarseThenDetailedSelection() async {
+        let engine = CapturingLLMEngine(responses: [
+            #"{"start_id":2,"end_id":17,"confidence":"high"}"#,
+            #"{"start_id":5,"end_id":6,"confidence":"high"}"#
+        ])
+        let operations = summaryOperations(engine: engine, contextLength: 4096)
+        let body = (1...80).map { index in
+            if index == 4 {
+                return "We implemented the protocol and ran the evaluation on a held-out cohort \(index)."
+            }
+            if index == 5 {
+                return "The results paragraph reports measured outcomes and comparison baselines \(index)."
+            }
+            return "Background or neighboring content paragraph \(index) with enough words to consume prompt budget."
+        }.joined(separator: "\n\n")
+        let text = """
+        Introduction
+        \("The introduction discusses motivation and related claims. ".repeated(12))
+
+        \(body)
+        """
+
+        let result = await operations.findMethodsResultsSlice(
+            in: text,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let options = await engine.capturedOptions()
+        XCTAssertEqual(options.count, 2)
+        XCTAssertEqual(result.strategy, .spanSelectorDetailed)
+        XCTAssertEqual(result.selectorCallCount, 2)
+        XCTAssertTrue(result.slice?.contains("implemented the protocol") == true)
+        XCTAssertTrue(result.slice?.contains("measured outcomes") == true)
+    }
+
     func testPaperDisplayStateSortsEveryTableColumnFromCachedRows() {
         let oldest = Date(timeIntervalSince1970: 100)
         let middleDate = Date(timeIntervalSince1970: 200)
@@ -466,6 +681,21 @@ final class SummarizoTests: XCTestCase {
         return paper
     }
 
+    private func summaryOperations(
+        engine: CapturingLLMEngine,
+        contextLength: Int = 4096
+    ) -> SummaryLLMOperations {
+        SummaryLLMOperations(
+            engine: engine,
+            modelID: "model",
+            modelLabel: "Model",
+            contextLength: contextLength,
+            supportsGrammar: true,
+            thinkingPreferences: SummaryLLMThinkingPreferences(summarization: false),
+            includeFullPrompts: false
+        )
+    }
+
     private func sortedRowIDs(
         _ papers: [SummarizedPaper],
         by column: PaperRowSortComparator.Column,
@@ -548,11 +778,18 @@ private extension String {
 }
 
 private actor CapturingLLMEngine: LLMEngine {
-    private let response: String
+    private let responses: [String]
     private var optionsLog: [GenerationOptions] = []
+    private var promptLog: [String] = []
+    private var systemLog: [String] = []
+    private var responseIndex = 0
 
     init(response: String) {
-        self.response = response
+        self.responses = [response]
+    }
+
+    init(responses: [String]) {
+        self.responses = responses
     }
 
     func currentModelID() async -> UUID? {
@@ -570,6 +807,10 @@ private actor CapturingLLMEngine: LLMEngine {
         onEvent: @Sendable (LLMStreamEvent) -> Void
     ) async throws -> String {
         optionsLog.append(options)
+        promptLog.append(prompt)
+        systemLog.append(system)
+        let response = responses.isEmpty ? "{}" : responses[min(responseIndex, responses.count - 1)]
+        responseIndex += 1
         onEvent(.generationStats(
             promptTokens: TokenEstimator.estimate(text: system + prompt),
             generatedTokens: TokenEstimator.estimate(text: response),
@@ -581,5 +822,13 @@ private actor CapturingLLMEngine: LLMEngine {
 
     func capturedOptions() -> [GenerationOptions] {
         optionsLog
+    }
+
+    func capturedPrompts() -> [String] {
+        promptLog
+    }
+
+    func capturedSystems() -> [String] {
+        systemLog
     }
 }

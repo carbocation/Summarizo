@@ -9,10 +9,11 @@ enum SummaryJSONGrammar {
     ws ::= [ \t\n\r]*
     """#
 
-    static let sectionClassification = #"""
+    static let spanSelection = #"""
     root ::= object
-    object ::= "{" ws "\"section_type\"" ws ":" ws section ws "}"
-    section ::= "\"front\"" | "\"methods_results\"" | "\"back\"" | "\"other\""
+    object ::= "{" ws "\"start_id\"" ws ":" ws int ws "," ws "\"end_id\"" ws ":" ws int ws "," ws "\"confidence\"" ws ":" ws confidence ws "}"
+    int ::= [0-9]+
+    confidence ::= "\"high\"" | "\"medium\"" | "\"low\""
     ws ::= [ \t\n\r]*
     """#
 }

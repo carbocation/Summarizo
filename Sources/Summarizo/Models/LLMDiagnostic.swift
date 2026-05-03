@@ -11,6 +11,16 @@ struct LLMDiagnostic: Codable, Hashable, Sendable {
     var stopReason: String?
     var enableThinking: Bool?
     var truncationNote: String?
+    var locationStrategy: String?
+    var locationSelectorCalls: Int?
+    var locationPromptTokens: Int?
+    var locationGeneratedTokens: Int?
+    var locationDurationSeconds: Double?
+    var locationStartPercent: Int?
+    var locationLengthChars: Int?
+    var locationSelectedStartParagraph: Int?
+    var locationSelectedEndParagraph: Int?
+    var locationFallbackReason: String?
     var responsePreview: String?
     var error: String?
     var startedAt: Date?
@@ -29,6 +39,16 @@ struct LLMDiagnostic: Codable, Hashable, Sendable {
         stopReason: nil,
         enableThinking: nil,
         truncationNote: nil,
+        locationStrategy: nil,
+        locationSelectorCalls: nil,
+        locationPromptTokens: nil,
+        locationGeneratedTokens: nil,
+        locationDurationSeconds: nil,
+        locationStartPercent: nil,
+        locationLengthChars: nil,
+        locationSelectedStartParagraph: nil,
+        locationSelectedEndParagraph: nil,
+        locationFallbackReason: nil,
         responsePreview: nil,
         error: nil,
         startedAt: nil,
