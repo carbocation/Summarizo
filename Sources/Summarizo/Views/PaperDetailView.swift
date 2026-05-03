@@ -83,6 +83,7 @@ struct PaperDetailView: View {
                 metadataRow("Parent key", paper.parentKey)
                 metadataRow("Attachment key", paper.attachmentKey)
                 metadataRow("Item type", paper.parentItemType)
+                metadataRow("Journal", paper.journalAbbreviation ?? "")
                 metadataRow("DOI", paper.doi ?? "")
                 metadataRow("URL", paper.itemURL ?? "")
                 metadataRow("PDF", paper.pdfPath ?? "")

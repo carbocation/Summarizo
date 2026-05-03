@@ -39,20 +39,21 @@ struct ZoteroDatabaseReader {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let date = row.string(8)?.nilIfBlank
-        let doi = row.string(9)?.nilIfBlank
-        let url = row.string(10)?.nilIfBlank
-        let abstractNote = row.string(11)?.nilIfBlank
-        let attachmentItemID = row.int(12)
-        let attachmentKey = row.string(13) ?? ""
-        let attachmentTitle = row.string(14)?.nilIfBlank
-        let linkMode = row.int(15)
-        let rawPath = row.string(16)?.nilIfBlank
-        let storageModTime = row.int64(17)
-        let storageHash = row.string(18)?.nilIfBlank
-        let fulltextIndexedPages = row.int64(19).map(Int.init)
-        let fulltextTotalPages = row.int64(20).map(Int.init)
-        let fulltextIndexedChars = row.int64(21).map(Int.init)
-        let fulltextTotalChars = row.int64(22).map(Int.init)
+        let journalAbbreviation = row.string(9)?.nilIfBlank
+        let doi = row.string(10)?.nilIfBlank
+        let url = row.string(11)?.nilIfBlank
+        let abstractNote = row.string(12)?.nilIfBlank
+        let attachmentItemID = row.int(13)
+        let attachmentKey = row.string(14) ?? ""
+        let attachmentTitle = row.string(15)?.nilIfBlank
+        let linkMode = row.int(16)
+        let rawPath = row.string(17)?.nilIfBlank
+        let storageModTime = row.int64(18)
+        let storageHash = row.string(19)?.nilIfBlank
+        let fulltextIndexedPages = row.int64(20).map(Int.init)
+        let fulltextTotalPages = row.int64(21).map(Int.init)
+        let fulltextIndexedChars = row.int64(22).map(Int.init)
+        let fulltextTotalChars = row.int64(23).map(Int.init)
 
         let resolved = resolveAttachmentURL(attachmentKey: attachmentKey, linkMode: linkMode, rawPath: rawPath)
         let resourceValues = try? resolved?.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
@@ -68,6 +69,7 @@ struct ZoteroDatabaseReader {
             title: parentTitle,
             creators: creators,
             date: date,
+            journalAbbreviation: journalAbbreviation,
             doi: doi,
             url: url,
             abstractNote: abstractNote,
@@ -141,6 +143,7 @@ struct ZoteroDatabaseReader {
         )
       ) AS creators,
       dateValue.value,
+      journalAbbreviationValue.value,
       doiValue.value,
       urlValue.value,
       abstractValue.value,
@@ -165,6 +168,9 @@ struct ZoteroDatabaseReader {
     LEFT JOIN itemDataValues title ON title.valueID = titleData.valueID
     LEFT JOIN itemData dateData ON dateData.itemID = p.itemID AND dateData.fieldID = 6
     LEFT JOIN itemDataValues dateValue ON dateValue.valueID = dateData.valueID
+    LEFT JOIN fields journalAbbreviationField ON journalAbbreviationField.fieldName = 'journalAbbreviation'
+    LEFT JOIN itemData journalAbbreviationData ON journalAbbreviationData.itemID = p.itemID AND journalAbbreviationData.fieldID = journalAbbreviationField.fieldID
+    LEFT JOIN itemDataValues journalAbbreviationValue ON journalAbbreviationValue.valueID = journalAbbreviationData.valueID
     LEFT JOIN itemData doiData ON doiData.itemID = p.itemID AND doiData.fieldID = 59
     LEFT JOIN itemDataValues doiValue ON doiValue.valueID = doiData.valueID
     LEFT JOIN itemData urlData ON urlData.itemID = p.itemID AND urlData.fieldID = 13

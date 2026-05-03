@@ -15,6 +15,7 @@ final class SummarizedPaper {
     var creators: [String]
     var date: String?
     var year: String?
+    var journalAbbreviation: String?
     var doi: String?
     var itemURL: String?
     var abstractNote: String?
@@ -57,6 +58,7 @@ final class SummarizedPaper {
         self.creators = candidate.creators
         self.date = candidate.date
         self.year = candidate.year
+        self.journalAbbreviation = candidate.journalAbbreviation
         self.doi = candidate.doi
         self.itemURL = candidate.url
         self.abstractNote = candidate.abstractNote
@@ -110,8 +112,16 @@ final class SummarizedPaper {
         }
     }
 
-    var creatorYearSortValue: String {
-        [creators.first ?? "", year ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+    var creatorsSortValue: String {
+        creators.joined(separator: " ")
+    }
+
+    var yearSortValue: String {
+        year ?? ""
+    }
+
+    var journalAbbreviationSortValue: String {
+        journalAbbreviation ?? ""
     }
 
     var statusSortValue: String {
@@ -151,6 +161,7 @@ final class SummarizedPaper {
         creators = candidate.creators
         date = candidate.date
         year = candidate.year
+        journalAbbreviation = candidate.journalAbbreviation
         doi = candidate.doi
         itemURL = candidate.url
         abstractNote = candidate.abstractNote
@@ -191,6 +202,7 @@ final class SummarizedPaper {
             title: title,
             creators: creators,
             date: date,
+            journalAbbreviation: journalAbbreviation,
             doi: doi,
             url: itemURL,
             abstractNote: abstractNote,
@@ -225,6 +237,7 @@ final class SummarizedPaper {
             title: title,
             creators: creators.joined(separator: "; "),
             date: date ?? "",
+            journalAbbreviation: journalAbbreviation ?? "",
             doi: doi ?? "",
             url: itemURL ?? "",
             pdfPath: pdfPath ?? "",

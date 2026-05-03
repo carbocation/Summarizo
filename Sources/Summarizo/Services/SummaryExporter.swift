@@ -17,8 +17,8 @@ enum SummaryExporter {
     static func tsvString(rows: [SummaryExportRow]) -> String {
         let header = [
             "library", "libraryID", "parentKey", "attachmentKey", "itemType",
-            "title", "creators", "date", "doi", "url", "pdfPath", "status",
-            "summary", "model", "summarizedAt", "error"
+            "title", "creators", "date", "journalAbbreviation", "doi", "url",
+            "pdfPath", "status", "summary", "model", "summarizedAt", "error"
         ].joined(separator: "\t")
         let body = rows.map { row in
             [
@@ -30,6 +30,7 @@ enum SummaryExporter {
                 row.title,
                 row.creators,
                 row.date,
+                row.journalAbbreviation,
                 row.doi,
                 row.url,
                 row.pdfPath,

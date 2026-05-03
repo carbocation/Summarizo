@@ -89,7 +89,10 @@ final class SummarizoTests: XCTestCase {
         INSERT INTO itemAttachments VALUES (3, 1, 1, 'application/pdf', NULL, 'storage:Deleted.pdf', 0, 123, 'def', NULL, NULL);
         INSERT INTO deletedItems VALUES (3);
         INSERT INTO itemDataValues VALUES (10, 'Deep Learning Study');
+        INSERT INTO itemDataValues VALUES (11, 'J Test');
+        INSERT INTO fields VALUES (90, 'journalAbbreviation');
         INSERT INTO itemData VALUES (1, 1, 10);
+        INSERT INTO itemData VALUES (1, 90, 11);
         INSERT INTO creators VALUES (1, 'Jane', 'Smith', 0);
         INSERT INTO itemCreators VALUES (1, 1, 1, 0);
         INSERT INTO fulltextItems VALUES (2, 4, 4, 900, 900, 0, 0);
@@ -99,6 +102,7 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(result.candidates.count, 1)
         XCTAssertEqual(result.candidates.first?.title, "Deep Learning Study")
         XCTAssertEqual(result.candidates.first?.creators, ["Jane Smith"])
+        XCTAssertEqual(result.candidates.first?.journalAbbreviation, "J Test")
         XCTAssertEqual(result.candidates.first?.resolvedURL?.path, pdf.path)
         XCTAssertEqual(result.selected.first?.candidate?.attachmentKey, "ATTACH1")
     }
@@ -152,7 +156,7 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(values, ["checkpointed", "wal-only"])
     }
 
-    func testTSVExportEscapesTabsAndNewlines() {
+    func testTSVExportEscapesTabsAndNewlines() throws {
         let row = SummaryExportRow(
             library: "My\tLibrary",
             libraryID: 1,
@@ -162,6 +166,7 @@ final class SummarizoTests: XCTestCase {
             title: "A\nTitle",
             creators: "Smith",
             date: "2024",
+            journalAbbreviation: "J\tTest",
             doi: "",
             url: "",
             pdfPath: "/tmp/a.pdf",
@@ -175,7 +180,11 @@ final class SummarizoTests: XCTestCase {
         let tsv = SummaryExporter.tsvString(rows: [row])
         XCTAssertFalse(tsv.contains("\tLibrary"))
         XCTAssertFalse(tsv.contains("A\nTitle"))
+        XCTAssertTrue(tsv.contains("J Test"))
         XCTAssertTrue(tsv.contains("Line 1 Line 2"))
+
+        let jsonl = try SummaryExporter.jsonlString(rows: [row])
+        XCTAssertTrue(jsonl.contains(#""journalAbbreviation" : "J\tTest""#))
     }
 
     func testSummaryThinkingToggleDisablesEngineThinkingAndUsesBoundedJSONOutput() async {
@@ -242,6 +251,7 @@ final class SummarizoTests: XCTestCase {
             status: .failed,
             creators: ["Carol Clark"],
             date: "2023",
+            journalAbbreviation: "Beta Journal",
             libraryName: "Beta Library",
             textSource: .ocr,
             updatedAt: newest
@@ -252,6 +262,7 @@ final class SummarizoTests: XCTestCase {
             status: .ready,
             creators: ["Alice Adams"],
             date: "2022",
+            journalAbbreviation: "Alpha Journal",
             libraryName: "Alpha Library",
             textSource: .pdfKit,
             updatedAt: oldest
@@ -262,6 +273,7 @@ final class SummarizoTests: XCTestCase {
             status: .queued,
             creators: ["Bob Brown"],
             date: "2021",
+            journalAbbreviation: "Gamma Journal",
             libraryName: "Gamma Library",
             textSource: .zoteroCache,
             updatedAt: middleDate
@@ -269,7 +281,9 @@ final class SummarizoTests: XCTestCase {
         let papers = [zebra, alpha, middle]
 
         XCTAssertEqual(sortedRowIDs(papers, by: .title), [alpha.id, middle.id, zebra.id])
-        XCTAssertEqual(sortedRowIDs(papers, by: .creatorYear), [alpha.id, middle.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .creators), [alpha.id, middle.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .year), [middle.id, alpha.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .journal), [alpha.id, zebra.id, middle.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .library), [alpha.id, zebra.id, middle.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .status), [middle.id, alpha.id, zebra.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .textSource), [alpha.id, zebra.id, middle.id])
@@ -339,6 +353,29 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(state.selectedPaper?.id, matchingSelected.id)
     }
 
+    func testPaperDisplayStateSearchesJournalAbbreviationAndShowsAllCreators() {
+        let paper = displayPaper(
+            parentKey: "JOURNAL",
+            title: "Clinical Study",
+            status: .ready,
+            creators: ["Alice Adams", "Bob Brown", "Carol Clark", "Dana Davis"],
+            journalAbbreviation: "JAMA"
+        )
+
+        let state = PaperDisplayState.make(
+            papers: [paper],
+            filter: .all,
+            searchText: "jama",
+            selection: [],
+            sortOrder: [PaperRowSortComparator(.title)]
+        )
+
+        XCTAssertEqual(state.rows.map(\.id), [paper.id])
+        XCTAssertEqual(state.rows.first?.creatorsDisplay, "Alice Adams, Bob Brown, Carol Clark, Dana Davis")
+        XCTAssertEqual(state.rows.first?.yearDisplay, "2024")
+        XCTAssertEqual(state.rows.first?.journalDisplayName, "JAMA")
+    }
+
     func testPaperDisplayStateResortsCachedRowsAndSelection() {
         let alpha = displayPaper(parentKey: "ALPHA", title: "Alpha", status: .ready)
         let zebra = displayPaper(parentKey: "ZEBRA", title: "Zebra", status: .ready)
@@ -360,12 +397,31 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(resorted.selectedPaper?.id, alpha.id)
     }
 
+    func testJournalAbbreviationBackfillDoesNotMarkReadyPaperStale() {
+        let paper = displayPaper(parentKey: "BACKFILL", title: "Backfill", status: .ready)
+        paper.summary = "Existing summary"
+        paper.summarizedAt = Date(timeIntervalSince1970: 1_000)
+        let originalFingerprint = paper.sourceFingerprint
+        let originalSummarizedAt = paper.summarizedAt
+
+        var candidate = paper.makeCandidate()
+        candidate.journalAbbreviation = "J Backfill"
+        paper.apply(candidate: candidate, status: .queued, reason: "refresh")
+
+        XCTAssertEqual(paper.journalAbbreviation, "J Backfill")
+        XCTAssertEqual(paper.sourceFingerprint, originalFingerprint)
+        XCTAssertEqual(paper.status, .ready)
+        XCTAssertEqual(paper.summary, "Existing summary")
+        XCTAssertEqual(paper.summarizedAt, originalSummarizedAt)
+    }
+
     private func displayPaper(
         parentKey: String,
         title: String,
         status: SummaryStatus,
         creators: [String] = ["Jane Smith"],
         date: String? = "2024",
+        journalAbbreviation: String? = nil,
         libraryName: String = "My Library",
         textSource: DocumentTextSource? = nil,
         updatedAt: Date = Date(timeIntervalSince1970: 100),
@@ -381,6 +437,7 @@ final class SummarizoTests: XCTestCase {
             title: title,
             creators: creators,
             date: date,
+            journalAbbreviation: journalAbbreviation,
             doi: nil,
             url: nil,
             abstractNote: nil,
@@ -438,6 +495,7 @@ final class SummarizoTests: XCTestCase {
             title: "Deep Learning Study",
             creators: ["Jane Smith"],
             date: "2024",
+            journalAbbreviation: nil,
             doi: nil,
             url: nil,
             abstractNote: nil,
@@ -474,6 +532,7 @@ final class SummarizoTests: XCTestCase {
     CREATE TABLE items (itemID INTEGER PRIMARY KEY, itemTypeID INT, dateAdded TIMESTAMP, dateModified TIMESTAMP, clientDateModified TIMESTAMP, libraryID INT, key TEXT, version INT, synced INT);
     CREATE TABLE itemAttachments (itemID INTEGER PRIMARY KEY, parentItemID INT, linkMode INT, contentType TEXT, charsetID INT, path TEXT, syncState INT, storageModTime INT, storageHash TEXT, lastProcessedModificationTime INT, lastRead INT);
     CREATE TABLE deletedItems (itemID INT);
+    CREATE TABLE fields (fieldID INTEGER PRIMARY KEY, fieldName TEXT);
     CREATE TABLE itemData (itemID INT, fieldID INT, valueID INT);
     CREATE TABLE itemDataValues (valueID INTEGER PRIMARY KEY, value TEXT);
     CREATE TABLE creators (creatorID INTEGER PRIMARY KEY, firstName TEXT, lastName TEXT, fieldMode INT);

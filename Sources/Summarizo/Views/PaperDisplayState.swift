@@ -131,8 +131,12 @@ struct PaperDisplayRow: Identifiable, Hashable {
     let id: String
     let title: String
     let titleSortValue: String
-    let creatorYearDisplay: String
-    let creatorYearSortValue: String
+    let creatorsDisplay: String
+    let creatorsSortValue: String
+    let yearDisplay: String
+    let yearSortValue: String
+    let journalDisplayName: String
+    let journalSortValue: String
     let libraryName: String
     let librarySortValue: String
     let statusRank: Int
@@ -153,15 +157,20 @@ struct PaperDisplayRow: Identifiable, Hashable {
     ) {
         let status = paper.status
         let textSourceDisplayName = paper.textSource?.displayName ?? ""
-        let creatorYearDisplay = Self.creatorYearDisplay(creators: paper.creators, year: paper.year)
-        let creatorYearSortValue = Self.creatorYearSortValue(creators: paper.creators, year: paper.year)
+        let creatorsDisplay = paper.creators.joined(separator: ", ")
+        let yearDisplay = paper.year ?? ""
+        let journalDisplayName = paper.journalAbbreviation ?? ""
         let updatedDate = paper.summarizedAt ?? paper.updatedAt
 
         self.id = paper.id
         self.title = paper.title
         self.titleSortValue = Self.sortText(paper.title)
-        self.creatorYearDisplay = creatorYearDisplay
-        self.creatorYearSortValue = Self.sortText(creatorYearSortValue)
+        self.creatorsDisplay = creatorsDisplay
+        self.creatorsSortValue = Self.sortText(paper.creators.joined(separator: " "))
+        self.yearDisplay = yearDisplay
+        self.yearSortValue = Self.sortText(yearDisplay)
+        self.journalDisplayName = journalDisplayName
+        self.journalSortValue = Self.sortText(journalDisplayName)
         self.libraryName = paper.libraryName
         self.librarySortValue = Self.sortText(paper.libraryName)
         self.statusRank = status.sortRank
@@ -184,6 +193,7 @@ struct PaperDisplayRow: Identifiable, Hashable {
             paper.title,
             paper.creators.joined(separator: " "),
             paper.year ?? "",
+            paper.journalAbbreviation ?? "",
             paper.libraryName,
             paper.doi ?? "",
             paper.summary
@@ -196,15 +206,6 @@ struct PaperDisplayRow: Identifiable, Hashable {
         return formatter
     }()
 
-    private static func creatorYearDisplay(creators: [String], year: String?) -> String {
-        let creators = creators.prefix(3).joined(separator: ", ")
-        return [creators, year ?? ""].filter { !$0.isEmpty }.joined(separator: " - ")
-    }
-
-    private static func creatorYearSortValue(creators: [String], year: String?) -> String {
-        [creators.first ?? "", year ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
-    }
-
     private static func sortText(_ text: String) -> String {
         text.folding(
             options: [.caseInsensitive, .diacriticInsensitive],
@@ -216,7 +217,9 @@ struct PaperDisplayRow: Identifiable, Hashable {
 struct PaperRowSortComparator: SortComparator, Hashable {
     enum Column: Hashable {
         case title
-        case creatorYear
+        case creators
+        case year
+        case journal
         case library
         case status
         case textSource
@@ -246,8 +249,12 @@ struct PaperRowSortComparator: SortComparator, Hashable {
         switch column {
         case .title:
             compareStrings(lhs.titleSortValue, rhs.titleSortValue)
-        case .creatorYear:
-            compareStrings(lhs.creatorYearSortValue, rhs.creatorYearSortValue)
+        case .creators:
+            compareStrings(lhs.creatorsSortValue, rhs.creatorsSortValue)
+        case .year:
+            compareStrings(lhs.yearSortValue, rhs.yearSortValue)
+        case .journal:
+            compareStrings(lhs.journalSortValue, rhs.journalSortValue)
         case .library:
             compareStrings(lhs.librarySortValue, rhs.librarySortValue)
         case .status:

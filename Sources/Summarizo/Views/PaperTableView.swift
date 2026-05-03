@@ -190,8 +190,12 @@ private struct PaperAppKitTableView: NSViewRepresentable {
             switch spec.column {
             case .title:
                 cell.configure(text: row.title, maximumLines: 2)
-            case .creatorYear:
-                cell.configure(text: row.creatorYearDisplay, isSecondary: true)
+            case .creators:
+                cell.configure(text: row.creatorsDisplay, isSecondary: true)
+            case .year:
+                cell.configure(text: row.yearDisplay, isSecondary: true)
+            case .journal:
+                cell.configure(text: row.journalDisplayName, isSecondary: true)
             case .library:
                 cell.configure(text: row.libraryName)
             case .status:
@@ -422,12 +426,14 @@ private final class PaperTableCellView: NSTableCellView {
 
 private struct PaperTableColumn: CaseIterable {
     static let allCases = [
-        PaperTableColumn(.title, title: "Title", width: 420, minWidth: 240),
-        PaperTableColumn(.creatorYear, title: "Creator/Year", width: 170, minWidth: 120),
-        PaperTableColumn(.library, title: "Library", width: 130, minWidth: 90),
-        PaperTableColumn(.status, title: "Status", width: 150, minWidth: 120),
-        PaperTableColumn(.textSource, title: "Text", width: 110, minWidth: 90),
-        PaperTableColumn(.updated, title: "Updated", width: 110, minWidth: 90)
+        PaperTableColumn(.title, title: "Title", width: 380, minWidth: 240),
+        PaperTableColumn(.creators, title: "Creators", width: 220, minWidth: 140),
+        PaperTableColumn(.year, title: "Year", width: 70, minWidth: 60),
+        PaperTableColumn(.journal, title: "Journal", width: 120, minWidth: 90),
+        PaperTableColumn(.library, title: "Library", width: 120, minWidth: 90),
+        PaperTableColumn(.status, title: "Status", width: 140, minWidth: 120),
+        PaperTableColumn(.textSource, title: "Text", width: 100, minWidth: 90),
+        PaperTableColumn(.updated, title: "Updated", width: 100, minWidth: 90)
     ]
 
     let column: PaperRowSortComparator.Column
@@ -472,7 +478,9 @@ private extension PaperRowSortComparator.Column {
     var sortKey: String {
         switch self {
         case .title: "title"
-        case .creatorYear: "creatorYear"
+        case .creators: "creators"
+        case .year: "year"
+        case .journal: "journal"
         case .library: "library"
         case .status: "status"
         case .textSource: "textSource"
@@ -484,8 +492,12 @@ private extension PaperRowSortComparator.Column {
         switch sortKey {
         case "title":
             self = .title
-        case "creatorYear":
-            self = .creatorYear
+        case "creators":
+            self = .creators
+        case "year":
+            self = .year
+        case "journal":
+            self = .journal
         case "library":
             self = .library
         case "status":
