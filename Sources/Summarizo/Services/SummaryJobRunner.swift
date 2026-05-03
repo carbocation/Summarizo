@@ -63,6 +63,16 @@ actor SummaryJobRunner {
         diagnostic.modelName = localLLM.modelName
         diagnostic.contextLength = localLLM.contextLength
         diagnostic.textSource = extracted.source
+        diagnostic.locationStrategy = location.strategy.rawValue
+        diagnostic.locationSelectorCalls = location.selectorCallCount
+        diagnostic.locationPromptTokens = location.diagnostics.compactMap(\.promptTokens).reduce(0, +)
+        diagnostic.locationGeneratedTokens = location.diagnostics.compactMap(\.generatedTokens).reduce(0, +)
+        diagnostic.locationDurationSeconds = location.durationSeconds
+        diagnostic.locationStartPercent = location.startPercent
+        diagnostic.locationLengthChars = location.lengthChars
+        diagnostic.locationSelectedStartParagraph = location.selectedStartParagraphID
+        diagnostic.locationSelectedEndParagraph = location.selectedEndParagraphID
+        diagnostic.locationFallbackReason = location.fallbackReason
 
         return SummaryRunResult(
             summary: summary,
