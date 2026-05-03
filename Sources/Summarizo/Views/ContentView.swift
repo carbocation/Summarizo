@@ -10,57 +10,32 @@ struct ContentView: View {
     @StateObject private var controller = LibraryController()
     @State private var filter: SummaryFilter = .all
     @State private var selection = Set<String>()
-    @State private var sortOrder = [KeyPathComparator(\SummarizedPaper.title)]
+    @State private var sortOrder = [PaperRowSortComparator(.title)]
     @State private var searchText = ""
-
-    private var filteredPapers: [SummarizedPaper] {
-        papers.filter { paper in
-            guard filter.includes(paper.status) else { return false }
-            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
-            let haystack = [
-                paper.title,
-                paper.creators.joined(separator: " "),
-                paper.year ?? "",
-                paper.libraryName,
-                paper.doi ?? "",
-                paper.summary
-            ].joined(separator: " ").lowercased()
-            return haystack.contains(searchText.lowercased())
-        }
-    }
-
-    private var displayedPapers: [SummarizedPaper] {
-        filteredPapers.sorted(using: sortOrder)
-    }
-
-    private var selectedPapers: [SummarizedPaper] {
-        displayedPapers.filter { selection.contains($0.id) }
-    }
-
-    private var selectedPaper: SummarizedPaper? {
-        selectedPapers.first ?? displayedPapers.first
-    }
+    @State private var displayState = PaperDisplayState.empty
 
     var body: some View {
         NavigationSplitView {
             SidebarView(
                 filter: $filter,
-                papers: papers,
+                counts: displayState.filterCounts,
                 isSummarizing: controller.isSummarizing
             )
         } content: {
             PaperTableView(
-                papers: displayedPapers,
+                rows: displayState.rows,
                 selection: $selection,
                 sortOrder: $sortOrder,
-                canRetrySelection: !selectedPapers.isEmpty && !controller.isScanning && !controller.isSummarizing,
-                onRetrySelection: retrySelected
+                canRetrySelection: !displayState.selectedPapers.isEmpty
+                    && !controller.isScanning
+                    && !controller.isSummarizing,
+                onRetrySelection: { retry(displayState.selectedPapers) }
             )
             .navigationTitle(filter.title)
             .searchable(text: $searchText, placement: .toolbar)
         } detail: {
             PaperDetailView(
-                paper: selectedPaper,
+                paper: displayState.selectedPaper,
                 onOpenPDF: openPDF,
                 onRetry: retry
             )
@@ -93,14 +68,16 @@ struct ContentView: View {
                 }
 
                 Button {
-                    retrySelected()
+                    retry(displayState.selectedPapers)
                 } label: {
                     Label(
-                        selectedPapers.count <= 1 ? "Retry Selected" : "Retry \(selectedPapers.count) Selected",
+                        displayState.selectedPapers.count <= 1
+                            ? "Retry Selected"
+                            : "Retry \(displayState.selectedPapers.count) Selected",
                         systemImage: "arrow.clockwise"
                     )
                 }
-                .disabled(selectedPapers.isEmpty || controller.isScanning || controller.isSummarizing)
+                .disabled(displayState.selectedPapers.isEmpty || controller.isScanning || controller.isSummarizing)
                 .help("Queue the selected visible papers for retry.")
 
                 Button {
@@ -131,11 +108,26 @@ struct ContentView: View {
         } message: {
             Text(controller.alertMessage ?? "")
         }
+        .onAppear {
+            refreshDisplayState()
+        }
         .onChange(of: filter) { _, _ in
-            pruneSelectionToDisplayedPapers()
+            refreshDisplayState(pruningSelection: true)
         }
         .onChange(of: searchText) { _, _ in
-            pruneSelectionToDisplayedPapers()
+            refreshDisplayState(pruningSelection: true)
+        }
+        .onChange(of: sortOrder) { _, newSortOrder in
+            displayState = displayState.sorted(using: newSortOrder, selection: selection)
+        }
+        .onChange(of: selection) { _, newSelection in
+            displayState = displayState.selecting(newSelection)
+        }
+        .onChange(of: papers.count) { _, _ in
+            refreshDisplayState(pruningSelection: true)
+        }
+        .onChange(of: controller.dataRevision) { _, _ in
+            refreshDisplayState(pruningSelection: true)
         }
     }
 
@@ -148,14 +140,30 @@ struct ContentView: View {
         controller.retry(paper, modelContext: modelContext)
     }
 
-    private func retrySelected() {
-        let papersToRetry = selectedPapers
-        controller.retry(papersToRetry, modelContext: modelContext)
-        pruneSelectionToDisplayedPapers()
+    private func retry(_ papers: [SummarizedPaper]) {
+        controller.retry(papers, modelContext: modelContext)
+        refreshDisplayState(pruningSelection: true)
     }
 
-    private func pruneSelectionToDisplayedPapers() {
-        let visibleIDs = Set(displayedPapers.map(\.id))
-        selection.formIntersection(visibleIDs)
+    private func refreshDisplayState(pruningSelection: Bool = false) {
+        var nextSelection = selection
+        var nextState = PaperDisplayState.make(
+            papers: papers,
+            filter: filter,
+            searchText: searchText,
+            selection: nextSelection,
+            sortOrder: sortOrder
+        )
+
+        if pruningSelection {
+            let visibleIDs = Set(nextState.rows.map(\.id))
+            nextSelection.formIntersection(visibleIDs)
+            if nextSelection != selection {
+                selection = nextSelection
+                nextState = nextState.selecting(nextSelection)
+            }
+        }
+
+        displayState = nextState
     }
 }

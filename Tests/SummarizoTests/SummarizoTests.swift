@@ -232,6 +232,197 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(result.diagnostics.last?.enableThinking, true)
     }
 
+    func testPaperDisplayStateSortsEveryTableColumnFromCachedRows() {
+        let oldest = Date(timeIntervalSince1970: 100)
+        let middleDate = Date(timeIntervalSince1970: 200)
+        let newest = Date(timeIntervalSince1970: 300)
+        let zebra = displayPaper(
+            parentKey: "ZEBRA",
+            title: "Zebra",
+            status: .failed,
+            creators: ["Carol Clark"],
+            date: "2023",
+            libraryName: "Beta Library",
+            textSource: .ocr,
+            updatedAt: newest
+        )
+        let alpha = displayPaper(
+            parentKey: "ALPHA",
+            title: "Alpha",
+            status: .ready,
+            creators: ["Alice Adams"],
+            date: "2022",
+            libraryName: "Alpha Library",
+            textSource: .pdfKit,
+            updatedAt: oldest
+        )
+        let middle = displayPaper(
+            parentKey: "MIDDLE",
+            title: "Middle",
+            status: .queued,
+            creators: ["Bob Brown"],
+            date: "2021",
+            libraryName: "Gamma Library",
+            textSource: .zoteroCache,
+            updatedAt: middleDate
+        )
+        let papers = [zebra, alpha, middle]
+
+        XCTAssertEqual(sortedRowIDs(papers, by: .title), [alpha.id, middle.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .creatorYear), [alpha.id, middle.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .library), [alpha.id, zebra.id, middle.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .status), [middle.id, alpha.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .textSource), [alpha.id, zebra.id, middle.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .updated), [alpha.id, middle.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .title, order: .reverse), [zebra.id, middle.id, alpha.id])
+    }
+
+    func testPaperDisplayStatePreservesSourceOrderForLargeTiedSortGroups() {
+        let updatedAt = Date(timeIntervalSince1970: 100)
+        let papers = (0..<5_000).map { index in
+            displayPaper(
+                parentKey: "TIE-\(index)",
+                title: "Same Title",
+                status: .ready,
+                creators: ["Same Creator"],
+                date: "2024",
+                libraryName: "Same Library",
+                textSource: .pdfKit,
+                updatedAt: updatedAt
+            )
+        }
+
+        let state = PaperDisplayState.make(
+            papers: papers,
+            filter: .all,
+            searchText: "",
+            selection: [],
+            sortOrder: [PaperRowSortComparator(.title)]
+        )
+
+        XCTAssertEqual(state.rows.map(\.id), papers.map(\.id))
+    }
+
+    func testPaperDisplayStateFiltersAndKeepsSelectionInDisplayOrder() {
+        let matchingSelected = displayPaper(
+            parentKey: "MATCH",
+            title: "Indexed Study",
+            status: .ready,
+            summary: "Neural retrieval model"
+        )
+        let hiddenSelected = displayPaper(
+            parentKey: "HIDDEN",
+            title: "Hidden Study",
+            status: .failed,
+            summary: "Neural retrieval model"
+        )
+        let matchingUnselected = displayPaper(
+            parentKey: "OTHER",
+            title: "Another Study",
+            status: .ready,
+            summary: "Neural retrieval model"
+        )
+
+        let state = PaperDisplayState.make(
+            papers: [matchingSelected, hiddenSelected, matchingUnselected],
+            filter: .ready,
+            searchText: "retrieval",
+            selection: [matchingSelected.id, hiddenSelected.id],
+            sortOrder: [PaperRowSortComparator(.title)]
+        )
+
+        XCTAssertEqual(state.rows.map(\.id), [
+            matchingUnselected.id,
+            matchingSelected.id
+        ])
+        XCTAssertEqual(state.selectedPapers.map(\.id), [matchingSelected.id])
+        XCTAssertEqual(state.selectedPaper?.id, matchingSelected.id)
+    }
+
+    func testPaperDisplayStateResortsCachedRowsAndSelection() {
+        let alpha = displayPaper(parentKey: "ALPHA", title: "Alpha", status: .ready)
+        let zebra = displayPaper(parentKey: "ZEBRA", title: "Zebra", status: .ready)
+        let state = PaperDisplayState.make(
+            papers: [alpha, zebra],
+            filter: .all,
+            searchText: "",
+            selection: [alpha.id],
+            sortOrder: [PaperRowSortComparator(.title)]
+        )
+
+        let resorted = state.sorted(
+            using: [PaperRowSortComparator(.title, order: .reverse)],
+            selection: [alpha.id]
+        )
+
+        XCTAssertEqual(resorted.rows.map(\.id), [zebra.id, alpha.id])
+        XCTAssertEqual(resorted.selectedPapers.map(\.id), [alpha.id])
+        XCTAssertEqual(resorted.selectedPaper?.id, alpha.id)
+    }
+
+    private func displayPaper(
+        parentKey: String,
+        title: String,
+        status: SummaryStatus,
+        creators: [String] = ["Jane Smith"],
+        date: String? = "2024",
+        libraryName: String = "My Library",
+        textSource: DocumentTextSource? = nil,
+        updatedAt: Date = Date(timeIntervalSince1970: 100),
+        summarizedAt: Date? = nil,
+        summary: String = ""
+    ) -> SummarizedPaper {
+        let candidate = ZoteroPDFCandidate(
+            libraryID: 1,
+            libraryName: libraryName,
+            parentItemID: 1,
+            parentKey: parentKey,
+            parentItemType: "journalArticle",
+            title: title,
+            creators: creators,
+            date: date,
+            doi: nil,
+            url: nil,
+            abstractNote: nil,
+            attachmentItemID: 1,
+            attachmentKey: "ATTACH-\(parentKey)",
+            attachmentTitle: nil,
+            linkMode: 1,
+            rawPath: "storage:Paper.pdf",
+            resolvedURL: URL(fileURLWithPath: "/tmp/Paper.pdf"),
+            cacheURL: nil,
+            isReadable: true,
+            storageModTime: 1,
+            storageHash: nil,
+            fileSize: 1_000_000,
+            fileModificationDate: nil,
+            fulltextIndexedPages: nil,
+            fulltextTotalPages: nil,
+            fulltextIndexedChars: nil,
+            fulltextTotalChars: nil
+        )
+        let paper = SummarizedPaper(candidate: candidate, status: status, reason: "test")
+        paper.summary = summary
+        paper.textSource = textSource
+        paper.updatedAt = updatedAt
+        paper.summarizedAt = summarizedAt
+        return paper
+    }
+
+    private func sortedRowIDs(
+        _ papers: [SummarizedPaper],
+        by column: PaperRowSortComparator.Column,
+        order: SortOrder = .forward
+    ) -> [String] {
+        PaperDisplayState.make(
+            papers: papers,
+            filter: .all,
+            searchText: "",
+            selection: [],
+            sortOrder: [PaperRowSortComparator(column, order: order)]
+        ).rows.map(\.id)
+    }
+
     private func candidate(
         attachmentKey: String,
         attachmentTitle: String,

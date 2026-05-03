@@ -69,7 +69,7 @@ enum SummaryStatus: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 }
 
-enum SummaryFilter: String, CaseIterable, Identifiable {
+enum SummaryFilter: String, CaseIterable, Hashable, Identifiable {
     case all
     case queued
     case ready

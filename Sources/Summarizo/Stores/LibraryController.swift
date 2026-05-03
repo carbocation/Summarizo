@@ -9,6 +9,7 @@ final class LibraryController: ObservableObject {
     @Published var statusLine: String?
     @Published var recentStatusLines: [String] = []
     @Published var alertMessage: String?
+    @Published var dataRevision = 0
 
     private let runner = SummaryJobRunner()
     private var summaryTask: Task<Void, Never>?
@@ -72,8 +73,12 @@ final class LibraryController: ObservableObject {
             paper.errorMessage = nil
             paper.updatedAt = .now
         }
-        try? modelContext.save()
-        appendStatus("Queued \(papers.count.formatted()) paper(s) for retry.")
+        do {
+            try save(modelContext)
+            appendStatus("Queued \(papers.count.formatted()) paper(s) for retry.")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
     }
 
     func exportAll(_ papers: [SummarizedPaper]) {
@@ -136,7 +141,7 @@ final class LibraryController: ObservableObject {
             }
         }
 
-        try modelContext.save()
+        try save(modelContext)
         appendStatus("Scan complete: \(inserted.formatted()) new, \(updated.formatted()) updated, \(result.selected.count.formatted()) primary candidates.")
     }
 
@@ -168,7 +173,7 @@ final class LibraryController: ObservableObject {
 
                 paper.status = .extractingText
                 paper.errorMessage = nil
-                try modelContext.save()
+                try save(modelContext)
 
                 let candidate = paper.makeCandidate()
                 do {
@@ -189,19 +194,19 @@ final class LibraryController: ObservableObject {
                     paper.status = .ready
                     paper.errorMessage = nil
                     paper.summarizedAt = .now
-                    try modelContext.save()
+                    try save(modelContext)
                     appendStatus("Stored summary for \(paper.title)")
                 } catch let error as DocumentTextError {
                     paper.status = (error.errorDescription?.contains("OCR") == true) ? .needsOCR : .failed
                     paper.errorMessage = error.localizedDescription
                     paper.diagnostic = diagnosticForError(error)
-                    try modelContext.save()
+                    try save(modelContext)
                     appendStatus(error.localizedDescription)
                 } catch {
                     paper.status = .failed
                     paper.errorMessage = error.localizedDescription
                     paper.diagnostic = diagnosticForError(error)
-                    try modelContext.save()
+                    try save(modelContext)
                     appendStatus("Failed: \(error.localizedDescription)")
                 }
             }
@@ -229,6 +234,11 @@ final class LibraryController: ObservableObject {
         if recentStatusLines.count > 12 {
             recentStatusLines.removeFirst(recentStatusLines.count - 12)
         }
+    }
+
+    private func save(_ modelContext: ModelContext) throws {
+        try modelContext.save()
+        dataRevision += 1
     }
 }
 

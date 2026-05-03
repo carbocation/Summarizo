@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Binding var filter: SummaryFilter
-    let papers: [SummarizedPaper]
+    let counts: SummaryFilterCounts
     let isSummarizing: Bool
 
     var body: some View {
@@ -35,7 +35,7 @@ struct SidebarView: View {
     }
 
     private func countLabel(for filter: SummaryFilter) -> String {
-        let count = papers.filter { filter.includes($0.status) }.count
+        let count = counts.count(for: filter)
         return "\(count.formatted()) item\(count == 1 ? "" : "s")"
     }
 }
