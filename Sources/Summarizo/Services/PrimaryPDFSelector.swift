@@ -1,17 +1,14 @@
 import Foundation
 
 enum PrimaryPDFSelector {
+    private static let ambiguityScoreDelta = 20
+
     static func selectPrimaryPDFs(from candidates: [ZoteroPDFCandidate]) -> [PrimaryPDFSelection] {
         let grouped = Dictionary(grouping: candidates) { "\($0.libraryID):\($0.parentKey)" }
+        var textSupplementCache: [String: Bool] = [:]
         return grouped.keys.sorted().compactMap { key in
             guard let group = grouped[key], let first = group.first else { return nil }
-            let scored = group.map(score)
-                .sorted {
-                    if $0.score == $1.score {
-                        return $0.attachmentItemID < $1.attachmentItemID
-                    }
-                    return $0.score > $1.score
-                }
+            let scored = sortByPrimaryPreference(group.map(score))
 
             let readable = scored.filter(\.isReadable)
             guard let top = readable.first else {
@@ -23,23 +20,45 @@ enum PrimaryPDFSelector {
                 )
             }
 
-            let allReadableSupplemental = !readable.isEmpty && readable.allSatisfy { isSupplemental($0) }
-            if allReadableSupplemental {
-                return PrimaryPDFSelection(
-                    parentID: key,
-                    candidate: top,
-                    status: .skippedSupplementalOnly,
-                    reason: "Only supplemental/protocol-like PDFs were found. \(top.selectionReason)"
-                )
-            }
-
             let second = readable.dropFirst().first
-            if let second, top.score - second.score <= 20 {
+            let isCloseMatch = second.map { top.score - $0.score <= ambiguityScoreDelta } ?? false
+            let noMetadataPrimary = readable.allSatisfy(isMetadataSupplemental)
+
+            if isCloseMatch || noMetadataPrimary {
+                let rescored = sortByPrimaryPreference(
+                    readable.map {
+                        score($0, includeCacheText: true, textSupplementCache: &textSupplementCache)
+                    }
+                )
+                guard let rescoredTop = rescored.first else { return nil }
+
+                let allReadableSupplemental = rescored.allSatisfy {
+                    isSupplemental($0, includeCacheText: true, textSupplementCache: &textSupplementCache)
+                }
+                if allReadableSupplemental {
+                    return PrimaryPDFSelection(
+                        parentID: key,
+                        candidate: rescoredTop,
+                        status: .skippedSupplementalOnly,
+                        reason: "Only supplemental/protocol-like PDFs were found. \(rescoredTop.selectionReason)"
+                    )
+                }
+
+                let rescoredSecond = rescored.dropFirst().first
+                if let rescoredSecond, rescoredTop.score - rescoredSecond.score <= ambiguityScoreDelta {
+                    return PrimaryPDFSelection(
+                        parentID: key,
+                        candidate: rescoredTop,
+                        status: .ambiguousPrimary,
+                        reason: "The top two PDF candidates scored similarly (\(rescoredTop.score) vs \(rescoredSecond.score)). \(rescoredTop.selectionReason)"
+                    )
+                }
+
                 return PrimaryPDFSelection(
                     parentID: key,
-                    candidate: top,
-                    status: .ambiguousPrimary,
-                    reason: "The top two PDF candidates scored similarly (\(top.score) vs \(second.score)). \(top.selectionReason)"
+                    candidate: rescoredTop,
+                    status: .queued,
+                    reason: rescoredTop.selectionReason
                 )
             }
 
@@ -53,6 +72,15 @@ enum PrimaryPDFSelector {
     }
 
     static func score(_ candidate: ZoteroPDFCandidate) -> ZoteroPDFCandidate {
+        var textSupplementCache: [String: Bool] = [:]
+        return score(candidate, includeCacheText: false, textSupplementCache: &textSupplementCache)
+    }
+
+    private static func score(
+        _ candidate: ZoteroPDFCandidate,
+        includeCacheText: Bool,
+        textSupplementCache: inout [String: Bool]
+    ) -> ZoteroPDFCandidate {
         var copy = candidate
         var score = 0
         var reasons: [String] = []
@@ -92,9 +120,9 @@ enum PrimaryPDFSelector {
             }
         }
 
-        if isSupplemental(candidate) {
+        if isSupplemental(candidate, includeCacheText: includeCacheText, textSupplementCache: &textSupplementCache) {
             score -= 90
-            reasons.append("supplement/protocol-like metadata or text")
+            reasons.append(includeCacheText ? "supplement/protocol-like metadata or text" : "supplement/protocol-like metadata")
         } else {
             score += 40
             reasons.append("not supplemental-looking")
@@ -115,6 +143,32 @@ enum PrimaryPDFSelector {
     }
 
     static func isSupplemental(_ candidate: ZoteroPDFCandidate) -> Bool {
+        isMetadataSupplemental(candidate)
+    }
+
+    private static func isSupplemental(
+        _ candidate: ZoteroPDFCandidate,
+        includeCacheText: Bool,
+        textSupplementCache: inout [String: Bool]
+    ) -> Bool {
+        if isMetadataSupplemental(candidate) {
+            return true
+        }
+
+        guard includeCacheText else {
+            return false
+        }
+
+        if let cached = textSupplementCache[candidate.id] {
+            return cached
+        }
+
+        let detected = leadingCachedText(for: candidate).map(hasSupplementalDocumentHeading) ?? false
+        textSupplementCache[candidate.id] = detected
+        return detected
+    }
+
+    private static func isMetadataSupplemental(_ candidate: ZoteroPDFCandidate) -> Bool {
         let fields = [
             candidate.attachmentTitle ?? "",
             candidate.resolvedURL?.lastPathComponent ?? "",
@@ -126,15 +180,7 @@ enum PrimaryPDFSelector {
             "protocol", "moesm", "mmc", "supinfo", "supp1", "supplemental",
             "figures", "tables", "dataset", "checklist"
         ]
-        if terms.contains(where: { fields.contains($0) }) {
-            return true
-        }
-
-        guard let leadingText = leadingCachedText(for: candidate) else {
-            return false
-        }
-
-        return hasSupplementalDocumentHeading(leadingText)
+        return terms.contains { fields.contains($0) }
     }
 
     private static func significantTokens(in text: String) -> [String] {
@@ -146,6 +192,15 @@ enum PrimaryPDFSelector {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.count >= 4 && !stop.contains($0) }
+    }
+
+    private static func sortByPrimaryPreference(_ candidates: [ZoteroPDFCandidate]) -> [ZoteroPDFCandidate] {
+        candidates.sorted {
+            if $0.score == $1.score {
+                return $0.attachmentItemID < $1.attachmentItemID
+            }
+            return $0.score > $1.score
+        }
     }
 
     private static func leadingCachedText(for candidate: ZoteroPDFCandidate) -> String? {

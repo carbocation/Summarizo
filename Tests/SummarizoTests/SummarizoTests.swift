@@ -106,10 +106,42 @@ final class SummarizoTests: XCTestCase {
         let scoredArticle = PrimaryPDFSelector.score(article)
         let selection = PrimaryPDFSelector.selectPrimaryPDFs(from: [supplement, article])
 
-        XCTAssertLessThan(scoredSupplement.score, scoredArticle.score - 20)
-        XCTAssertTrue(scoredSupplement.selectionReason.contains("supplement/protocol-like metadata or text"))
+        XCTAssertLessThanOrEqual(scoredArticle.score - scoredSupplement.score, 20)
         XCTAssertEqual(selection.first?.candidate?.attachmentKey, "FULLTEXT")
         XCTAssertEqual(selection.first?.status, .queued)
+        XCTAssertTrue(selection.first?.reason.contains("not supplemental-looking") == true)
+        XCTAssertFalse(selection.first?.reason.contains("supplement/protocol-like metadata or text") == true)
+    }
+
+    func testPrimarySelectorDoesNotReadCacheWhenMetadataWinnerIsClear() throws {
+        let root = try temporaryDirectory()
+        let misleadingCache = root.appending(path: "misleading-cache")
+        try """
+        Supplementary Table 1 - This cache would demote the clear metadata winner if read
+        """.write(to: misleadingCache, atomically: true, encoding: .utf8)
+
+        let fullText = candidate(
+            attachmentKey: "FULLTEXT",
+            attachmentTitle: "Full Text PDF",
+            filename: "Smith et al - 2024 - Deep Learning Study.pdf",
+            readable: true,
+            cacheURL: misleadingCache
+        )
+        let other = candidate(
+            attachmentKey: "OTHER",
+            attachmentTitle: "PDF",
+            filename: "Unrelated.pdf",
+            readable: true
+        )
+
+        let fullTextScore = PrimaryPDFSelector.score(fullText)
+        let otherScore = PrimaryPDFSelector.score(other)
+        let selection = PrimaryPDFSelector.selectPrimaryPDFs(from: [fullText, other])
+
+        XCTAssertGreaterThan(fullTextScore.score - otherScore.score, 20)
+        XCTAssertEqual(selection.first?.candidate?.attachmentKey, "FULLTEXT")
+        XCTAssertEqual(selection.first?.status, .queued)
+        XCTAssertTrue(selection.first?.reason.contains("not supplemental-looking") == true)
     }
 
     func testReaderScansChildPDFAndIgnoresDeletedAttachment() throws {
