@@ -246,6 +246,116 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(result.diagnostics.last?.enableThinking, true)
     }
 
+    func testSummaryRetriesOversizedChunkAsSmallerChunks() async {
+        let engine = CapturingLLMEngine(
+            responses: [
+                #"{"summary":"partial one"}"#,
+                #"{"summary":"partial two"}"#,
+                #"{"summary":"merged"}"#
+            ],
+            budgetFailures: 1
+        )
+        let operations = SummaryLLMOperations(
+            engine: engine,
+            modelID: "model",
+            modelLabel: "Model",
+            contextLength: 16_384,
+            supportsGrammar: true,
+            thinkingPreferences: SummaryLLMThinkingPreferences(summarization: false),
+            includeFullPrompts: false
+        )
+
+        let result = await operations.extractChunkedSummary(
+            from: "Methods and results reported measured outcomes against baseline. ".repeated(300),
+            textSource: .pdfKit,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let prompts = await engine.capturedPrompts()
+        let chunkPrompts = prompts.filter { $0.contains("Excerpt") }
+        XCTAssertEqual(result.summary, "merged")
+        XCTAssertGreaterThanOrEqual(prompts.count, 4)
+        XCTAssertTrue(prompts.last?.contains("Partial summaries") == true)
+        XCTAssertGreaterThanOrEqual(chunkPrompts.count, 3)
+        XCTAssertGreaterThan(chunkPrompts.first?.count ?? 0, chunkPrompts.dropFirst().first?.count ?? 0)
+        XCTAssertTrue(result.diagnostics.first?.error?.contains("Prompt used 16016 tokens") == true)
+        XCTAssertNil(result.diagnostics.last?.error)
+    }
+
+    @MainActor
+    func testLocalLLMLoadPlanUsesCalibratedContextInAutoMode() async throws {
+        let suiteName = "SummarizoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let root = try temporaryDirectory()
+        let source = root.appending(path: "model.gguf")
+        try Data("fake model".utf8).write(to: source)
+        let library = ModelLibrary(root: root.appending(path: "models", directoryHint: .isDirectory))
+        let model = try await library.add(
+            weightsAt: source,
+            displayName: "Calibrated Model",
+            filename: "model.gguf",
+            sizeBytes: 10,
+            source: .imported,
+            contextLength: 262_144
+        )
+        let store = LlamaContextCalibrationStore(
+            defaults: defaults,
+            recordsKey: "records",
+            deviceIDKey: "device"
+        )
+        let runtime = LocalLLMEngine.contextCalibrationRuntimeFingerprint()
+        let key = store.key(for: model, runtime: runtime)
+        store.save(LlamaContextCalibrationRecord(
+            key: key,
+            maximumSupportedContext: 131_072,
+            probedTiers: []
+        ))
+
+        let maybePlan = await LocalLLMEngine.loadPlan(
+            from: model.id.uuidString,
+            in: library,
+            defaults: defaults,
+            refreshingLibrary: false,
+            calibrationStore: store
+        )
+        let plan = try XCTUnwrap(maybePlan)
+
+        XCTAssertEqual(plan.requestedContext, 131_072)
+    }
+
+    func testSummaryContextPolicyStartsAutoAtHalfOfInstalledContextButHonorsManual() {
+        let plan = LocalLLMLoadPlan(
+            selection: .installed(UUID()),
+            displayName: "Large Context Model",
+            requestedContext: 262_144,
+            capabilities: LocalLLMModelCapabilities(
+                supportsGrammar: true,
+                usesExactTokenCounts: true,
+                contextSize: 262_144
+            )
+        )
+
+        XCTAssertEqual(
+            SummaryContextPolicy.requestedContext(for: plan, mode: .auto),
+            131_072
+        )
+        XCTAssertEqual(
+            SummaryContextPolicy.requestedContext(for: plan, mode: .manual),
+            262_144
+        )
+        XCTAssertEqual(
+            SummaryContextPolicy.requestedContext(for: plan, mode: .manual, override: 32_768),
+            32_768
+        )
+        XCTAssertEqual(SummaryContextPolicy.fallbackContext(below: 65_536), 32_768)
+        XCTAssertNil(SummaryContextPolicy.fallbackContext(below: 16_384))
+        XCTAssertEqual(SummaryContextPolicy.automaticStartingContext(for: 8_192), 8_192)
+        XCTAssertTrue(SummaryContextPolicy.isDecodeResourceFailure("llama_decode failed."))
+    }
+
     func testSummaryPromptsUseDomainNeutralEvidenceRules() async {
         let engine = CapturingLLMEngine(responses: [
             #"{"summary":"partial"}"#,
@@ -1008,17 +1118,20 @@ private extension String {
 
 private actor CapturingLLMEngine: LLMEngine {
     private let responses: [String]
+    private var remainingBudgetFailures: Int
     private var optionsLog: [GenerationOptions] = []
     private var promptLog: [String] = []
     private var systemLog: [String] = []
     private var responseIndex = 0
 
-    init(response: String) {
+    init(response: String, budgetFailures: Int = 0) {
         self.responses = [response]
+        self.remainingBudgetFailures = budgetFailures
     }
 
-    init(responses: [String]) {
+    init(responses: [String], budgetFailures: Int = 0) {
         self.responses = responses
+        self.remainingBudgetFailures = budgetFailures
     }
 
     func currentModelID() async -> UUID? {
@@ -1038,6 +1151,14 @@ private actor CapturingLLMEngine: LLMEngine {
         optionsLog.append(options)
         promptLog.append(prompt)
         systemLog.append(system)
+        if remainingBudgetFailures > 0 {
+            remainingBudgetFailures -= 1
+            throw LLMEngineError.insufficientGenerationBudget(
+                contextSize: 16_384,
+                promptTokens: 16_016,
+                reserve: LLMGenerationBudget.outputTokenReserve
+            )
+        }
         let response = responses.isEmpty ? "{}" : responses[min(responseIndex, responses.count - 1)]
         responseIndex += 1
         onEvent(.generationStats(

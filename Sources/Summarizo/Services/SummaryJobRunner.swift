@@ -32,7 +32,7 @@ actor SummaryJobRunner {
         )
 
         try Task.checkCancellation()
-        let localLLM = try await loadLocalLLM(includeFullPrompts: includeFullPrompts)
+        var localLLM = try await loadLocalLLM(includeFullPrompts: includeFullPrompts)
         await progress?("Locating summary source")
         let location = await localLLM.operations.findMethodsResultsSlice(
             in: extracted.fullText,
@@ -46,12 +46,28 @@ actor SummaryJobRunner {
 
         try Task.checkCancellation()
         await progress?("Summarizing")
-        let summaryResult = await localLLM.operations.extractChunkedSummary(
-            from: slice,
-            textSource: extracted.source,
-            options: localLLM.options,
-            progress: progress
-        )
+        var summaryResult: ChunkedSummaryResult
+        while true {
+            summaryResult = await localLLM.operations.extractChunkedSummary(
+                from: slice,
+                textSource: extracted.source,
+                options: localLLM.options,
+                progress: progress
+            )
+
+            let error = summaryResult.diagnostics.last?.error
+            guard summaryResult.summary?.nilIfBlank == nil,
+                  SummaryContextPolicy.isDecodeResourceFailure(error),
+                  let retryContext = SummaryContextPolicy.fallbackContext(below: localLLM.contextLength)
+            else { break }
+
+            try Task.checkCancellation()
+            await progress?("Model ran out of GPU memory at \(localLLM.contextLength.formatted()) tokens; retrying at \(retryContext.formatted()).")
+            localLLM = try await loadLocalLLM(
+                includeFullPrompts: includeFullPrompts,
+                requestedContextOverride: retryContext
+            )
+        }
 
         guard let summary = summaryResult.summary?.nilIfBlank else {
             let error = summaryResult.diagnostics.last?.error ?? "The model did not return a usable summary."
@@ -85,7 +101,10 @@ actor SummaryJobRunner {
         )
     }
 
-    private func loadLocalLLM(includeFullPrompts: Bool) async throws -> LoadedLocalLLM {
+    private func loadLocalLLM(
+        includeFullPrompts: Bool,
+        requestedContextOverride: Int? = nil
+    ) async throws -> LoadedLocalLLM {
         let selectedModelID = UserDefaults.standard.string(forKey: "llama.selectedModelID") ?? ""
         guard !selectedModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SummaryJobError.modelNotConfigured
@@ -93,53 +112,51 @@ actor SummaryJobRunner {
 
         let requestedOptions = GenerationOptions.configuredSummaryOptions()
         let thinkingPreferences = SummaryLLMThinkingPreferences.configured()
+        let loadPlan = try await localLLMLoadPlan(for: selectedModelID)
+        let requestedContext = SummaryContextPolicy.requestedContext(
+            for: loadPlan,
+            mode: LlamaContextPolicy.currentMode(),
+            override: requestedContextOverride
+        )
+        let expectedContext = SummaryContextPolicy.expectedLoadedContext(
+            for: loadPlan,
+            requestedContext: requestedContext
+        )
 
         if let loaded, loaded.modelID == selectedModelID {
-            if loaded.operations.includeFullPrompts == includeFullPrompts,
+            if loaded.contextLength == expectedContext,
+               loaded.operations.includeFullPrompts == includeFullPrompts,
                loaded.operations.thinkingPreferences == thinkingPreferences,
                loaded.options == requestedOptions {
                 return loaded
             }
 
-            let refreshed = LoadedLocalLLM(
-                operations: SummaryLLMOperations(
-                    engine: LocalLLMEngine.shared,
+            if loaded.contextLength == expectedContext {
+                let refreshed = LoadedLocalLLM(
+                    operations: SummaryLLMOperations(
+                        engine: LocalLLMEngine.shared,
+                        modelID: loaded.modelID,
+                        modelLabel: loaded.modelName,
+                        contextLength: loaded.contextLength,
+                        supportsGrammar: loaded.supportsGrammar,
+                        thinkingPreferences: thinkingPreferences,
+                        includeFullPrompts: includeFullPrompts
+                    ),
+                    options: requestedOptions,
                     modelID: loaded.modelID,
-                    modelLabel: loaded.modelName,
+                    modelName: loaded.modelName,
                     contextLength: loaded.contextLength,
-                    supportsGrammar: loaded.supportsGrammar,
-                    thinkingPreferences: thinkingPreferences,
-                    includeFullPrompts: includeFullPrompts
-                ),
-                options: requestedOptions,
-                modelID: loaded.modelID,
-                modelName: loaded.modelName,
-                contextLength: loaded.contextLength,
-                supportsGrammar: loaded.supportsGrammar
-            )
-            self.loaded = refreshed
-            return refreshed
-        }
-
-        await ModelLibrary.shared.refresh()
-        let selection = try LocalLLMEngine.selection(from: selectedModelID)
-        let desiredContext: Int
-
-        switch selection {
-        case .installed(let id):
-            guard let installed = await ModelLibrary.shared.model(id: id) else {
-                throw LocalLLMEngineError.installedModelNotFound(id)
+                    supportsGrammar: loaded.supportsGrammar
+                )
+                self.loaded = refreshed
+                return refreshed
             }
-            desiredContext = LlamaContextPolicy.resolvedRequestedContext(for: installed)
-        case .system:
-            let capabilities = await LocalLLMEngine.capabilities(for: selection, in: ModelLibrary.shared)
-            desiredContext = max(capabilities.contextSize, LlamaContextPolicy.minimumContext)
         }
 
         let info = try await LocalLLMEngine.shared.load(
-            selection: selection,
+            selection: loadPlan.selection,
             from: ModelLibrary.shared,
-            requestedContext: desiredContext
+            requestedContext: requestedContext
         )
 
         if case .installed(let id) = info.selection, info.trainingContextSize > 0 {
@@ -164,6 +181,74 @@ actor SummaryJobRunner {
         )
         self.loaded = loaded
         return loaded
+    }
+
+    private func localLLMLoadPlan(for selectedModelID: String) async throws -> LocalLLMLoadPlan {
+        let selection = try LocalLLMEngine.selection(from: selectedModelID)
+        if let plan = await LocalLLMEngine.loadPlan(
+            from: selectedModelID,
+            in: ModelLibrary.shared
+        ) {
+            return plan
+        }
+
+        switch selection {
+        case .installed(let id):
+            throw LocalLLMEngineError.installedModelNotFound(id)
+        case .system(let id):
+            throw LocalLLMEngineError.unavailableSystemModel(id)
+        }
+    }
+
+}
+
+enum SummaryContextPolicy {
+    static let resourceRetryFloor = 16_384
+
+    static func requestedContext(
+        for plan: LocalLLMLoadPlan,
+        mode: LlamaContextMode,
+        override: Int? = nil
+    ) -> Int {
+        let planned = max(plan.requestedContext, LlamaContextPolicy.minimumContext)
+        if let override {
+            return min(max(override, LlamaContextPolicy.minimumContext), planned)
+        }
+
+        guard case .installed = plan.selection, mode == .auto else {
+            return planned
+        }
+        return automaticStartingContext(for: planned)
+    }
+
+    static func expectedLoadedContext(
+        for plan: LocalLLMLoadPlan,
+        requestedContext: Int
+    ) -> Int {
+        let requested = max(requestedContext, LlamaContextPolicy.minimumContext)
+        let upperBound = plan.capabilities.contextSize > 0
+            ? plan.capabilities.contextSize
+            : requested
+        return max(LlamaContextPolicy.minimumContext, min(requested, upperBound))
+    }
+
+    static func fallbackContext(below context: Int) -> Int? {
+        guard context > resourceRetryFloor else { return nil }
+        return max(resourceRetryFloor, context / 2)
+    }
+
+    static func automaticStartingContext(for plannedContext: Int) -> Int {
+        let planned = max(plannedContext, LlamaContextPolicy.minimumContext)
+        guard planned > resourceRetryFloor else { return planned }
+        return max(resourceRetryFloor, planned / 2)
+    }
+
+    static func isDecodeResourceFailure(_ error: String?) -> Bool {
+        guard let error else { return false }
+        return error.localizedCaseInsensitiveContains("llama_decode failed")
+            || error.localizedCaseInsensitiveContains("insufficient memory")
+            || error.localizedCaseInsensitiveContains("outofmemory")
+            || error.localizedCaseInsensitiveContains("out of memory")
     }
 }
 

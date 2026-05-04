@@ -18,9 +18,12 @@ typealias LLMModelSelection = CarbocationLocalLLM.LLMModelSelection
 typealias LLMResponsePreview = CarbocationLocalLLM.LLMResponsePreview
 typealias LLMStreamEvent = CarbocationLocalLLM.LLMStreamEvent
 typealias LLMSystemModelOption = CarbocationLocalLLM.LLMSystemModelOption
+typealias LlamaContextCalibrationRecord = CarbocationLocalLLM.LlamaContextCalibrationRecord
+typealias LlamaContextCalibrationStore = CarbocationLocalLLM.LlamaContextCalibrationStore
 typealias LlamaContextMode = CarbocationLocalLLM.LlamaContextMode
 typealias LlamaContextPolicy = CarbocationLocalLLM.LlamaContextPolicy
 typealias ModelLibrary = CarbocationLocalLLM.ModelLibrary
+typealias ModelSource = CarbocationLocalLLM.ModelSource
 typealias ModelLibraryPickerCalibrationAdapter = CarbocationLocalLLMUI.ModelLibraryPickerCalibrationAdapter
 typealias ModelLibraryPickerView = CarbocationLocalLLMUI.ModelLibraryPickerView
 typealias ModelStorage = CarbocationLocalLLM.ModelStorage
@@ -28,6 +31,8 @@ typealias TokenEstimator = CarbocationLocalLLM.TokenEstimator
 
 typealias LocalLLMEngine = CarbocationLocalLLMRuntime.LocalLLMEngine
 typealias LocalLLMEngineError = CarbocationLocalLLMRuntime.LocalLLMEngineError
+typealias LocalLLMLoadPlan = CarbocationLocalLLMRuntime.LocalLLMLoadPlan
+typealias LocalLLMModelCapabilities = CarbocationLocalLLMRuntime.LocalLLMModelCapabilities
 
 struct SummaryLLMThinkingPreferences: Equatable, Sendable {
     static let summarizationKey = "llama.thinking.summarization"
