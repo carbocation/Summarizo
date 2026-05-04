@@ -11,6 +11,7 @@ struct ZoteroPDFCandidate: Identifiable, Hashable, Sendable {
     var title: String
     var creators: [String]
     var date: String?
+    var dateAdded: String? = nil
     var journalAbbreviation: String?
     var doi: String?
     var url: String?

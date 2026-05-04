@@ -14,6 +14,7 @@ final class SummarizedPaper {
     var title: String
     var creators: [String]
     var date: String?
+    var dateAdded: String?
     var year: String?
     var journalAbbreviation: String?
     var doi: String?
@@ -57,6 +58,7 @@ final class SummarizedPaper {
         self.title = candidate.title
         self.creators = candidate.creators
         self.date = candidate.date
+        self.dateAdded = candidate.dateAdded
         self.year = candidate.year
         self.journalAbbreviation = candidate.journalAbbreviation
         self.doi = candidate.doi
@@ -160,6 +162,7 @@ final class SummarizedPaper {
         title = candidate.title
         creators = candidate.creators
         date = candidate.date
+        dateAdded = candidate.dateAdded
         year = candidate.year
         journalAbbreviation = candidate.journalAbbreviation
         doi = candidate.doi
@@ -202,6 +205,7 @@ final class SummarizedPaper {
             title: title,
             creators: creators,
             date: date,
+            dateAdded: dateAdded,
             journalAbbreviation: journalAbbreviation,
             doi: doi,
             url: itemURL,
@@ -237,6 +241,7 @@ final class SummarizedPaper {
             title: title,
             creators: creators.joined(separator: "; "),
             date: date ?? "",
+            dateAdded: dateAdded ?? "",
             journalAbbreviation: journalAbbreviation ?? "",
             doi: doi ?? "",
             url: itemURL ?? "",

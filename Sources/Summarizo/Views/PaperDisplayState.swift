@@ -135,6 +135,8 @@ struct PaperDisplayRow: Identifiable, Hashable {
     let creatorsSortValue: String
     let yearDisplay: String
     let yearSortValue: String
+    let dateAddedDisplay: String
+    let dateAddedSortValue: String
     let journalDisplayName: String
     let journalSortValue: String
     let libraryName: String
@@ -159,6 +161,7 @@ struct PaperDisplayRow: Identifiable, Hashable {
         let textSourceDisplayName = paper.textSource?.displayName ?? ""
         let creatorsDisplay = paper.creators.joined(separator: ", ")
         let yearDisplay = paper.year ?? ""
+        let dateAddedDisplay = paper.dateAdded ?? ""
         let journalDisplayName = paper.journalAbbreviation ?? ""
         let updatedDate = paper.summarizedAt ?? paper.updatedAt
 
@@ -169,6 +172,8 @@ struct PaperDisplayRow: Identifiable, Hashable {
         self.creatorsSortValue = Self.sortText(paper.creators.joined(separator: " "))
         self.yearDisplay = yearDisplay
         self.yearSortValue = Self.sortText(yearDisplay)
+        self.dateAddedDisplay = dateAddedDisplay
+        self.dateAddedSortValue = Self.sortText(dateAddedDisplay)
         self.journalDisplayName = journalDisplayName
         self.journalSortValue = Self.sortText(journalDisplayName)
         self.libraryName = paper.libraryName
@@ -193,6 +198,7 @@ struct PaperDisplayRow: Identifiable, Hashable {
             paper.title,
             paper.creators.joined(separator: " "),
             paper.year ?? "",
+            paper.dateAdded ?? "",
             paper.journalAbbreviation ?? "",
             paper.libraryName,
             paper.doi ?? "",
@@ -219,6 +225,7 @@ struct PaperRowSortComparator: SortComparator, Hashable {
         case title
         case creators
         case year
+        case dateAdded
         case journal
         case library
         case status
@@ -253,6 +260,8 @@ struct PaperRowSortComparator: SortComparator, Hashable {
             compareStrings(lhs.creatorsSortValue, rhs.creatorsSortValue)
         case .year:
             compareStrings(lhs.yearSortValue, rhs.yearSortValue)
+        case .dateAdded:
+            compareStrings(lhs.dateAddedSortValue, rhs.dateAddedSortValue)
         case .journal:
             compareStrings(lhs.journalSortValue, rhs.journalSortValue)
         case .library:

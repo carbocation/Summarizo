@@ -82,7 +82,7 @@ final class SummarizoTests: XCTestCase {
         try db.execute("""
         INSERT INTO libraries VALUES (1, 'user', 1, 1, 0, 0, 0, 0, 0);
         INSERT INTO itemTypesCombined VALUES (22, 'journalArticle');
-        INSERT INTO items VALUES (1, 22, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 'PARENT1', 0, 0);
+        INSERT INTO items VALUES (1, 22, '2023-11-05 12:34:56', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 'PARENT1', 0, 0);
         INSERT INTO items VALUES (2, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 'ATTACH1', 0, 0);
         INSERT INTO items VALUES (3, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 'DELETED1', 0, 0);
         INSERT INTO itemAttachments VALUES (2, 1, 1, 'application/pdf', NULL, 'storage:Paper.pdf', 0, 123, 'abc', NULL, NULL);
@@ -102,6 +102,7 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(result.candidates.count, 1)
         XCTAssertEqual(result.candidates.first?.title, "Deep Learning Study")
         XCTAssertEqual(result.candidates.first?.creators, ["Jane Smith"])
+        XCTAssertEqual(result.candidates.first?.dateAdded, "2023-11-05 12:34:56")
         XCTAssertEqual(result.candidates.first?.journalAbbreviation, "J Test")
         XCTAssertEqual(result.candidates.first?.resolvedURL?.path, pdf.path)
         XCTAssertEqual(result.selected.first?.candidate?.attachmentKey, "ATTACH1")
@@ -166,6 +167,7 @@ final class SummarizoTests: XCTestCase {
             title: "A\nTitle",
             creators: "Smith",
             date: "2024",
+            dateAdded: "2023-11-05 12:34:56",
             journalAbbreviation: "J\tTest",
             doi: "",
             url: "",
@@ -182,8 +184,10 @@ final class SummarizoTests: XCTestCase {
         XCTAssertFalse(tsv.contains("A\nTitle"))
         XCTAssertTrue(tsv.contains("J Test"))
         XCTAssertTrue(tsv.contains("Line 1 Line 2"))
+        XCTAssertTrue(tsv.contains("\t2023-11-05 12:34:56\n"))
 
         let jsonl = try SummaryExporter.jsonlString(rows: [row])
+        XCTAssertTrue(jsonl.contains(#""dateAdded" : "2023-11-05 12:34:56""#))
         XCTAssertTrue(jsonl.contains(#""journalAbbreviation" : "J\tTest""#))
     }
 
@@ -239,6 +243,64 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(options.first?.enableThinking, true)
         XCTAssertNil(options.first?.maxOutputTokens)
         XCTAssertEqual(result.diagnostics.last?.enableThinking, true)
+    }
+
+    func testSummaryPromptsUseDomainNeutralEvidenceRules() async {
+        let engine = CapturingLLMEngine(responses: [
+            #"{"summary":"partial"}"#,
+            #"{"summary":"merged"}"#
+        ])
+        let operations = summaryOperations(engine: engine)
+        let source = """
+        We measured samples against baseline systems and reported observed values.
+
+        """.repeated(500)
+
+        let result = await operations.extractChunkedSummary(
+            from: source,
+            textSource: .pdfKit,
+            options: .extractionSafe,
+            progress: nil
+        )
+
+        let prompts = await engine.capturedPrompts()
+        let systems = await engine.capturedSystems()
+        let chunkPrompt = prompts.first ?? ""
+        let mergePrompt = prompts.last ?? ""
+        let joinedPrompts = prompts.joined(separator: "\n")
+
+        XCTAssertEqual(SummaryLLMOperations.promptVersion, "summary-v3")
+        XCTAssertEqual(result.summary, "merged")
+        XCTAssertTrue(systems.first?.contains("what was done and what was observed") == true)
+        XCTAssertTrue(systems.first?.contains("Prioritize named observed findings") == true)
+        XCTAssertTrue(systems.first?.contains("convert claims into measured observations") == true)
+        XCTAssertTrue(chunkPrompt.contains("Sentence plan:"))
+        XCTAssertTrue(chunkPrompt.contains("Sentence 1: study setup only if needed."))
+        XCTAssertTrue(chunkPrompt.contains("Sentences 2-4: named observed findings."))
+        XCTAssertTrue(chunkPrompt.contains("what was studied, built, or tested"))
+        XCTAssertTrue(chunkPrompt.contains("materials, data, cases, system, organism, model, or setup"))
+        XCTAssertTrue(chunkPrompt.contains("the most important observed findings, not just the study design"))
+        XCTAssertTrue(chunkPrompt.contains("2-4 distinct findings if the excerpt reports several outcomes; do not collapse them into one broad category"))
+        XCTAssertTrue(chunkPrompt.contains("specific variable, condition, material, marker, system, method, or model and the outcome it was linked to"))
+        XCTAssertTrue(chunkPrompt.contains("directions, effect sizes, P values, odds ratios, confidence intervals, variance explained, accuracy, AUC"))
+        XCTAssertTrue(chunkPrompt.contains("Do not stop after the methods, cohort, or setup description when results are present."))
+        XCTAssertTrue(chunkPrompt.contains("Spend most of the summary on observed findings; keep setup brief."))
+        XCTAssertTrue(chunkPrompt.contains(#"Do not use vague result phrases like "associations were observed""#))
+        XCTAssertTrue(chunkPrompt.contains("Do not generalize findings beyond the reported group, condition, treatment, cohort, or outcome."))
+        XCTAssertTrue(chunkPrompt.contains("Replication, validation, and limitations are not substitutes for primary findings"))
+        XCTAssertTrue(chunkPrompt.contains("State null, failed, mixed, or non-replicated results directly."))
+        XCTAssertTrue(chunkPrompt.contains("If the paper offers a possible reason for a null or failed result, attribute it as a note from the paper rather than making it the cause."))
+        XCTAssertTrue(chunkPrompt.contains("concrete basis for the result: material, sample, dataset, system, experiment, measurement, comparator, or evaluation method"))
+        XCTAssertTrue(chunkPrompt.contains("If the evidence is limited, keep the conclusion narrow."))
+        XCTAssertTrue(mergePrompt.contains("Preserve concrete details about the material, sample, dataset, system, experiment, measurement, comparator, or evaluation method"))
+        XCTAssertTrue(mergePrompt.contains("Preserve 2-4 distinct observed findings when the partial summaries report several outcomes; do not collapse them into a single broad category."))
+        XCTAssertTrue(mergePrompt.contains("For each key finding, name the specific variable, condition, material, marker, system, method, or model and the outcome it was linked to."))
+        XCTAssertTrue(mergePrompt.contains("Do not generalize findings beyond the reported group, condition, treatment, cohort, or outcome."))
+        XCTAssertTrue(mergePrompt.contains("State null, failed, mixed, or non-replicated results directly."))
+        XCTAssertTrue(mergePrompt.contains("Include a limitation only after the central findings, and skip it if space is tight."))
+        XCTAssertFalse(joinedPrompts.localizedCaseInsensitiveContains("physician"))
+        XCTAssertFalse(joinedPrompts.localizedCaseInsensitiveContains("triage"))
+        XCTAssertFalse(joinedPrompts.localizedCaseInsensitiveContains("chatgpt"))
     }
 
     func testExpandedHeadingSelectionAvoidsSpanSelectorCall() async {
@@ -466,6 +528,7 @@ final class SummarizoTests: XCTestCase {
             status: .failed,
             creators: ["Carol Clark"],
             date: "2023",
+            dateAdded: "2023-02-01 00:00:00",
             journalAbbreviation: "Beta Journal",
             libraryName: "Beta Library",
             textSource: .ocr,
@@ -477,6 +540,7 @@ final class SummarizoTests: XCTestCase {
             status: .ready,
             creators: ["Alice Adams"],
             date: "2022",
+            dateAdded: "2023-01-01 00:00:00",
             journalAbbreviation: "Alpha Journal",
             libraryName: "Alpha Library",
             textSource: .pdfKit,
@@ -488,6 +552,7 @@ final class SummarizoTests: XCTestCase {
             status: .queued,
             creators: ["Bob Brown"],
             date: "2021",
+            dateAdded: "2023-03-01 00:00:00",
             journalAbbreviation: "Gamma Journal",
             libraryName: "Gamma Library",
             textSource: .zoteroCache,
@@ -498,6 +563,7 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(sortedRowIDs(papers, by: .title), [alpha.id, middle.id, zebra.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .creators), [alpha.id, middle.id, zebra.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .year), [middle.id, alpha.id, zebra.id])
+        XCTAssertEqual(sortedRowIDs(papers, by: .dateAdded), [alpha.id, zebra.id, middle.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .journal), [alpha.id, zebra.id, middle.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .library), [alpha.id, zebra.id, middle.id])
         XCTAssertEqual(sortedRowIDs(papers, by: .status), [middle.id, alpha.id, zebra.id])
@@ -612,7 +678,7 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(resorted.selectedPaper?.id, alpha.id)
     }
 
-    func testJournalAbbreviationBackfillDoesNotMarkReadyPaperStale() {
+    func testMetadataBackfillDoesNotMarkReadyPaperStale() {
         let paper = displayPaper(parentKey: "BACKFILL", title: "Backfill", status: .ready)
         paper.summary = "Existing summary"
         paper.summarizedAt = Date(timeIntervalSince1970: 1_000)
@@ -621,9 +687,11 @@ final class SummarizoTests: XCTestCase {
 
         var candidate = paper.makeCandidate()
         candidate.journalAbbreviation = "J Backfill"
+        candidate.dateAdded = "2023-11-05 12:34:56"
         paper.apply(candidate: candidate, status: .queued, reason: "refresh")
 
         XCTAssertEqual(paper.journalAbbreviation, "J Backfill")
+        XCTAssertEqual(paper.dateAdded, "2023-11-05 12:34:56")
         XCTAssertEqual(paper.sourceFingerprint, originalFingerprint)
         XCTAssertEqual(paper.status, .ready)
         XCTAssertEqual(paper.summary, "Existing summary")
@@ -636,6 +704,7 @@ final class SummarizoTests: XCTestCase {
         status: SummaryStatus,
         creators: [String] = ["Jane Smith"],
         date: String? = "2024",
+        dateAdded: String? = nil,
         journalAbbreviation: String? = nil,
         libraryName: String = "My Library",
         textSource: DocumentTextSource? = nil,
@@ -652,6 +721,7 @@ final class SummarizoTests: XCTestCase {
             title: title,
             creators: creators,
             date: date,
+            dateAdded: dateAdded,
             journalAbbreviation: journalAbbreviation,
             doi: nil,
             url: nil,

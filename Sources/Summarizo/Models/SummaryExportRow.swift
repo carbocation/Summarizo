@@ -9,6 +9,7 @@ struct SummaryExportRow: Codable, Sendable {
     var title: String
     var creators: String
     var date: String
+    var dateAdded: String = ""
     var journalAbbreviation: String
     var doi: String
     var url: String

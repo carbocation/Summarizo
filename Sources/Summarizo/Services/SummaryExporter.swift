@@ -18,7 +18,8 @@ enum SummaryExporter {
         let header = [
             "library", "libraryID", "parentKey", "attachmentKey", "itemType",
             "title", "creators", "date", "journalAbbreviation", "doi", "url",
-            "pdfPath", "status", "summary", "model", "summarizedAt", "error"
+            "pdfPath", "status", "summary", "model", "summarizedAt", "error",
+            "dateAdded"
         ].joined(separator: "\t")
         let body = rows.map { row in
             [
@@ -38,7 +39,8 @@ enum SummaryExporter {
                 row.summary,
                 row.model,
                 row.summarizedAt,
-                row.error
+                row.error,
+                row.dateAdded
             ].map(escapeTSV).joined(separator: "\t")
         }
         return ([header] + body).joined(separator: "\n") + "\n"

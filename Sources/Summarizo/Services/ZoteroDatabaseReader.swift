@@ -39,21 +39,22 @@ struct ZoteroDatabaseReader {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let date = row.string(8)?.nilIfBlank
-        let journalAbbreviation = row.string(9)?.nilIfBlank
-        let doi = row.string(10)?.nilIfBlank
-        let url = row.string(11)?.nilIfBlank
-        let abstractNote = row.string(12)?.nilIfBlank
-        let attachmentItemID = row.int(13)
-        let attachmentKey = row.string(14) ?? ""
-        let attachmentTitle = row.string(15)?.nilIfBlank
-        let linkMode = row.int(16)
-        let rawPath = row.string(17)?.nilIfBlank
-        let storageModTime = row.int64(18)
-        let storageHash = row.string(19)?.nilIfBlank
-        let fulltextIndexedPages = row.int64(20).map(Int.init)
-        let fulltextTotalPages = row.int64(21).map(Int.init)
-        let fulltextIndexedChars = row.int64(22).map(Int.init)
-        let fulltextTotalChars = row.int64(23).map(Int.init)
+        let dateAdded = row.string(9)?.nilIfBlank
+        let journalAbbreviation = row.string(10)?.nilIfBlank
+        let doi = row.string(11)?.nilIfBlank
+        let url = row.string(12)?.nilIfBlank
+        let abstractNote = row.string(13)?.nilIfBlank
+        let attachmentItemID = row.int(14)
+        let attachmentKey = row.string(15) ?? ""
+        let attachmentTitle = row.string(16)?.nilIfBlank
+        let linkMode = row.int(17)
+        let rawPath = row.string(18)?.nilIfBlank
+        let storageModTime = row.int64(19)
+        let storageHash = row.string(20)?.nilIfBlank
+        let fulltextIndexedPages = row.int64(21).map(Int.init)
+        let fulltextTotalPages = row.int64(22).map(Int.init)
+        let fulltextIndexedChars = row.int64(23).map(Int.init)
+        let fulltextTotalChars = row.int64(24).map(Int.init)
 
         let resolved = resolveAttachmentURL(attachmentKey: attachmentKey, linkMode: linkMode, rawPath: rawPath)
         let resourceValues = try? resolved?.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
@@ -69,6 +70,7 @@ struct ZoteroDatabaseReader {
             title: parentTitle,
             creators: creators,
             date: date,
+            dateAdded: dateAdded,
             journalAbbreviation: journalAbbreviation,
             doi: doi,
             url: url,
@@ -143,6 +145,7 @@ struct ZoteroDatabaseReader {
         )
       ) AS creators,
       dateValue.value,
+      p.dateAdded,
       journalAbbreviationValue.value,
       doiValue.value,
       urlValue.value,

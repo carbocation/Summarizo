@@ -194,6 +194,8 @@ private struct PaperAppKitTableView: NSViewRepresentable {
                 cell.configure(text: row.creatorsDisplay, isSecondary: true)
             case .year:
                 cell.configure(text: row.yearDisplay, isSecondary: true)
+            case .dateAdded:
+                cell.configure(text: row.dateAddedDisplay, isSecondary: true)
             case .journal:
                 cell.configure(text: row.journalDisplayName, isSecondary: true)
             case .library:
@@ -429,6 +431,7 @@ private struct PaperTableColumn: CaseIterable {
         PaperTableColumn(.title, title: "Title", width: 380, minWidth: 240),
         PaperTableColumn(.creators, title: "Creators", width: 220, minWidth: 140),
         PaperTableColumn(.year, title: "Year", width: 70, minWidth: 60),
+        PaperTableColumn(.dateAdded, title: "Added", width: 140, minWidth: 120),
         PaperTableColumn(.journal, title: "Journal", width: 120, minWidth: 90),
         PaperTableColumn(.library, title: "Library", width: 120, minWidth: 90),
         PaperTableColumn(.status, title: "Status", width: 140, minWidth: 120),
@@ -480,6 +483,7 @@ private extension PaperRowSortComparator.Column {
         case .title: "title"
         case .creators: "creators"
         case .year: "year"
+        case .dateAdded: "dateAdded"
         case .journal: "journal"
         case .library: "library"
         case .status: "status"
@@ -496,6 +500,8 @@ private extension PaperRowSortComparator.Column {
             self = .creators
         case "year":
             self = .year
+        case "dateAdded":
+            self = .dateAdded
         case "journal":
             self = .journal
         case "library":
