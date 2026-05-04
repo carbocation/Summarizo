@@ -21,6 +21,9 @@ let package = Package(
                 .product(name: "CarbocationLocalLLMRuntime", package: "CarbocationLocalLLM"),
                 .product(name: "CarbocationLocalLLMUI", package: "CarbocationLocalLLM")
             ],
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedLibrary("sqlite3")
             ]
