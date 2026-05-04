@@ -10,10 +10,8 @@ struct PaperTableView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !selection.isEmpty {
-                selectionActionBar
-                Divider()
-            }
+            selectionActionBar
+            Divider()
 
             PaperAppKitTableView(
                 rows: rows,
@@ -36,7 +34,7 @@ struct PaperTableView: View {
 
     private var selectionActionBar: some View {
         HStack(spacing: 10) {
-            Text("\(selection.count.formatted()) selected")
+            Text(selection.isEmpty ? "No selection" : "\(selection.count.formatted()) selected")
                 .foregroundStyle(.secondary)
             Spacer()
             Button {
@@ -51,6 +49,7 @@ struct PaperTableView: View {
             } label: {
                 Label("Clear Selection", systemImage: "xmark.circle")
             }
+            .disabled(selection.isEmpty)
             .help("Clear the current table selection.")
         }
         .padding(.horizontal, 12)
@@ -474,46 +473,5 @@ private struct PaperTableColumn: CaseIterable {
         }
 
         self = spec
-    }
-}
-
-private extension PaperRowSortComparator.Column {
-    var sortKey: String {
-        switch self {
-        case .title: "title"
-        case .creators: "creators"
-        case .year: "year"
-        case .dateAdded: "dateAdded"
-        case .journal: "journal"
-        case .library: "library"
-        case .status: "status"
-        case .textSource: "textSource"
-        case .updated: "updated"
-        }
-    }
-
-    init?(sortKey: String) {
-        switch sortKey {
-        case "title":
-            self = .title
-        case "creators":
-            self = .creators
-        case "year":
-            self = .year
-        case "dateAdded":
-            self = .dateAdded
-        case "journal":
-            self = .journal
-        case "library":
-            self = .library
-        case "status":
-            self = .status
-        case "textSource":
-            self = .textSource
-        case "updated":
-            self = .updated
-        default:
-            return nil
-        }
     }
 }

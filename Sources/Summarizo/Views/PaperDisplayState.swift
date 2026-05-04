@@ -221,7 +221,7 @@ struct PaperDisplayRow: Identifiable, Hashable {
 }
 
 struct PaperRowSortComparator: SortComparator, Hashable {
-    enum Column: Hashable {
+    enum Column: String, Hashable {
         case title
         case creators
         case year
@@ -304,6 +304,16 @@ struct PaperRowSortComparator: SortComparator, Hashable {
         case .orderedSame:
             return .orderedSame
         }
+    }
+}
+
+extension PaperRowSortComparator.Column {
+    var sortKey: String {
+        rawValue
+    }
+
+    init?(sortKey: String) {
+        self.init(rawValue: sortKey)
     }
 }
 

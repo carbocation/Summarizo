@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PaperDetailView: View {
     let paper: SummarizedPaper?
+    let canRetry: Bool
     let onOpenPDF: (SummarizedPaper) -> Void
     let onRetry: (SummarizedPaper) -> Void
 
@@ -59,6 +60,8 @@ struct PaperDetailView: View {
                 } label: {
                     Label("Queue Retry", systemImage: "arrow.clockwise")
                 }
+                .disabled(!canRetry)
+                .help("Queue this paper for retry.")
             }
         }
     }

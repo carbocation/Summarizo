@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import Summarizo
 
 final class SummarizoTests: XCTestCase {
@@ -678,6 +679,142 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(resorted.selectedPaper?.id, alpha.id)
     }
 
+    func testPaperTableSortPreferenceRestoresDateAddedDescending() {
+        let preference = PaperTableSortPreference(
+            columnRawValue: "dateAdded",
+            isAscending: false
+        )
+
+        XCTAssertEqual(
+            preference.sortOrder,
+            [PaperRowSortComparator(.dateAdded, order: .reverse)]
+        )
+    }
+
+    func testPaperTableSortPreferenceStoresSortChanges() {
+        let preference = PaperTableSortPreference(
+            sortOrder: [PaperRowSortComparator(.updated, order: .forward)]
+        )
+
+        XCTAssertEqual(preference.columnRawValue, "updated")
+        XCTAssertEqual(preference.isAscending, true)
+    }
+
+    func testPaperTableSortPreferenceFallsBackForUnknownColumn() {
+        let preference = PaperTableSortPreference(
+            columnRawValue: "unknown",
+            isAscending: false
+        )
+
+        XCTAssertEqual(preference.columnRawValue, "title")
+        XCTAssertEqual(preference.isAscending, true)
+        XCTAssertEqual(preference.sortOrder, [PaperRowSortComparator(.title)])
+    }
+
+    @MainActor
+    func testRetryStartsSummariesWhenIdleAndModelConfigured() async throws {
+        let suiteName = "SummarizoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set("system.apple-intelligence", forKey: "llama.selectedModelID")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let container = try makeInMemoryModelContainer()
+        let modelContext = ModelContext(container)
+        let paper = displayPaper(parentKey: "RETRY-IDLE", title: "Retry", status: .failed)
+        modelContext.insert(paper)
+        try modelContext.save()
+
+        let didStart = expectation(description: "summary executor started")
+        let controller = LibraryController(defaults: defaults) { _ in
+            didStart.fulfill()
+        }
+
+        controller.retry([paper], modelContext: modelContext)
+
+        await fulfillment(of: [didStart], timeout: 1.0)
+        XCTAssertEqual(paper.status, .queued)
+    }
+
+    @MainActor
+    func testRetryWithoutConfiguredModelLeavesPaperQueued() throws {
+        let suiteName = "SummarizoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let container = try makeInMemoryModelContainer()
+        let modelContext = ModelContext(container)
+        let paper = displayPaper(parentKey: "RETRY-NO-MODEL", title: "Retry", status: .failed)
+        modelContext.insert(paper)
+        try modelContext.save()
+
+        var didStart = false
+        let controller = LibraryController(defaults: defaults) { _ in
+            didStart = true
+        }
+
+        controller.retry([paper], modelContext: modelContext)
+
+        XCTAssertEqual(paper.status, .queued)
+        XCTAssertFalse(didStart)
+        XCTAssertFalse(controller.isSummarizing)
+        XCTAssertEqual(controller.alertMessage, SummaryJobError.modelNotConfigured.localizedDescription)
+        XCTAssertTrue(
+            controller.recentStatusLines.contains(SummaryJobError.modelNotConfigured.localizedDescription)
+        )
+    }
+
+    @MainActor
+    func testRetryWhileScanningQueuesWithoutStartingSummaries() throws {
+        let suiteName = "SummarizoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set("system.apple-intelligence", forKey: "llama.selectedModelID")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let container = try makeInMemoryModelContainer()
+        let modelContext = ModelContext(container)
+        let paper = displayPaper(parentKey: "RETRY-SCANNING", title: "Retry", status: .failed)
+        modelContext.insert(paper)
+        try modelContext.save()
+
+        var didStart = false
+        let controller = LibraryController(defaults: defaults) { _ in
+            didStart = true
+        }
+        controller.isScanning = true
+
+        controller.retry([paper], modelContext: modelContext)
+
+        XCTAssertEqual(paper.status, .queued)
+        XCTAssertFalse(didStart)
+        XCTAssertFalse(controller.isSummarizing)
+    }
+
+    @MainActor
+    func testRetryWhileSummarizingQueuesWithoutStartingAnotherRun() throws {
+        let suiteName = "SummarizoTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set("system.apple-intelligence", forKey: "llama.selectedModelID")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let container = try makeInMemoryModelContainer()
+        let modelContext = ModelContext(container)
+        let paper = displayPaper(parentKey: "RETRY-SUMMARIZING", title: "Retry", status: .failed)
+        modelContext.insert(paper)
+        try modelContext.save()
+
+        var didStart = false
+        let controller = LibraryController(defaults: defaults) { _ in
+            didStart = true
+        }
+        controller.isSummarizing = true
+
+        controller.retry([paper], modelContext: modelContext)
+
+        XCTAssertEqual(paper.status, .queued)
+        XCTAssertFalse(didStart)
+        XCTAssertTrue(controller.isSummarizing)
+    }
+
     func testMetadataBackfillDoesNotMarkReadyPaperStale() {
         let paper = displayPaper(parentKey: "BACKFILL", title: "Backfill", status: .ready)
         paper.summary = "Existing summary"
@@ -778,6 +915,12 @@ final class SummarizoTests: XCTestCase {
             selection: [],
             sortOrder: [PaperRowSortComparator(column, order: order)]
         ).rows.map(\.id)
+    }
+
+    private func makeInMemoryModelContainer() throws -> ModelContainer {
+        let schema = Schema([SummarizedPaper.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        return try ModelContainer(for: schema, configurations: [configuration])
     }
 
     private func candidate(

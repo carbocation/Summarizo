@@ -4,6 +4,8 @@ import SwiftData
 
 @MainActor
 final class LibraryController: ObservableObject {
+    typealias SummaryExecutor = @MainActor (ModelContext) async -> Void
+
     @Published var isScanning = false
     @Published var isSummarizing = false
     @Published var statusLine: String?
@@ -12,7 +14,17 @@ final class LibraryController: ObservableObject {
     @Published var dataRevision = 0
 
     private let runner = SummaryJobRunner()
+    private let defaults: UserDefaults
+    private let summaryExecutor: SummaryExecutor?
     private var summaryTask: Task<Void, Never>?
+
+    init(
+        defaults: UserDefaults = .standard,
+        summaryExecutor: SummaryExecutor? = nil
+    ) {
+        self.defaults = defaults
+        self.summaryExecutor = summaryExecutor
+    }
 
     func scan(modelContext: ModelContext) {
         guard !isScanning else { return }
@@ -39,6 +51,22 @@ final class LibraryController: ObservableObject {
 
     func summarizeQueued(modelContext: ModelContext) {
         guard !isSummarizing else { return }
+        do {
+            guard try hasPendingSummaries(in: modelContext) else {
+                appendStatus("No queued papers to summarize.")
+                return
+            }
+        } catch {
+            alertMessage = error.localizedDescription
+            appendStatus(error.localizedDescription)
+            return
+        }
+
+        guard isModelConfigured else {
+            reportModelNotConfigured()
+            return
+        }
+
         isSummarizing = true
         recentStatusLines = []
         summaryTask = Task { [weak self] in
@@ -50,7 +78,7 @@ final class LibraryController: ObservableObject {
                     self.summaryTask = nil
                 }
             }
-            await self.performSummaries(modelContext: modelContext)
+            await self.runSummaries(modelContext: modelContext)
         }
     }
 
@@ -68,6 +96,7 @@ final class LibraryController: ObservableObject {
 
     func retry(_ papers: [SummarizedPaper], modelContext: ModelContext) {
         guard !papers.isEmpty else { return }
+        let shouldStartAfterQueueing = !isScanning && !isSummarizing
         for paper in papers {
             paper.status = .queued
             paper.errorMessage = nil
@@ -78,6 +107,11 @@ final class LibraryController: ObservableObject {
             appendStatus("Queued \(papers.count.formatted()) paper(s) for retry.")
         } catch {
             alertMessage = error.localizedDescription
+            return
+        }
+
+        if shouldStartAfterQueueing {
+            summarizeQueued(modelContext: modelContext)
         }
     }
 
@@ -179,8 +213,8 @@ final class LibraryController: ObservableObject {
                 do {
                     let result = try await runner.summarize(
                         candidate: candidate,
-                        allowOCRFallback: UserDefaults.standard.bool(forKey: "summarizo.ocrEnabled"),
-                        includeFullPrompts: UserDefaults.standard.bool(forKey: "summarizo.verboseDiagnostics"),
+                        allowOCRFallback: defaults.bool(forKey: "summarizo.ocrEnabled"),
+                        includeFullPrompts: defaults.bool(forKey: "summarizo.verboseDiagnostics"),
                         progress: { [weak self] line in
                             await self?.appendProgress(line)
                         }
@@ -223,6 +257,32 @@ final class LibraryController: ObservableObject {
         diagnostic.error = error.localizedDescription
         diagnostic.finishedAt = .now
         return diagnostic
+    }
+
+    private var isModelConfigured: Bool {
+        let selectedModelID = defaults.string(forKey: "llama.selectedModelID") ?? ""
+        let trimmed = selectedModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return LLMModelSelection(storageValue: trimmed) != nil
+    }
+
+    private func reportModelNotConfigured() {
+        let message = SummaryJobError.modelNotConfigured.localizedDescription
+        alertMessage = message
+        appendStatus(message)
+    }
+
+    private func hasPendingSummaries(in modelContext: ModelContext) throws -> Bool {
+        try modelContext.fetch(FetchDescriptor<SummarizedPaper>())
+            .contains { $0.status == .queued || $0.status == .stale }
+    }
+
+    private func runSummaries(modelContext: ModelContext) async {
+        if let summaryExecutor {
+            await summaryExecutor(modelContext)
+            return
+        }
+
+        await performSummaries(modelContext: modelContext)
     }
 
     private func appendProgress(_ line: String) {

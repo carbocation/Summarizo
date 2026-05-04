@@ -10,9 +10,12 @@ struct ContentView: View {
     @StateObject private var controller = LibraryController()
     @State private var filter: SummaryFilter = .all
     @State private var selection = Set<String>()
-    @State private var sortOrder = [PaperRowSortComparator(.title)]
+    @State private var sortOrder = PaperTableSortPreference.defaultSortOrder
     @State private var searchText = ""
     @State private var displayState = PaperDisplayState.empty
+
+    @AppStorage(PaperTableSortPreference.columnKey) private var storedSortColumn = PaperTableSortPreference.defaultColumnRawValue
+    @AppStorage(PaperTableSortPreference.ascendingKey) private var storedSortAscending = PaperTableSortPreference.defaultAscending
 
     var body: some View {
         NavigationSplitView {
@@ -36,6 +39,7 @@ struct ContentView: View {
         } detail: {
             PaperDetailView(
                 paper: displayState.selectedPaper,
+                canRetry: canRetry,
                 onOpenPDF: openPDF,
                 onRetry: retry
             )
@@ -109,6 +113,7 @@ struct ContentView: View {
             Text(controller.alertMessage ?? "")
         }
         .onAppear {
+            restoreSortOrder()
             refreshDisplayState()
         }
         .onChange(of: filter) { _, _ in
@@ -118,6 +123,7 @@ struct ContentView: View {
             refreshDisplayState(pruningSelection: true)
         }
         .onChange(of: sortOrder) { _, newSortOrder in
+            persistSortOrder(newSortOrder)
             displayState = displayState.sorted(using: newSortOrder, selection: selection)
         }
         .onChange(of: selection) { _, newSelection in
@@ -143,6 +149,26 @@ struct ContentView: View {
     private func retry(_ papers: [SummarizedPaper]) {
         controller.retry(papers, modelContext: modelContext)
         refreshDisplayState(pruningSelection: true)
+    }
+
+    private var canRetry: Bool {
+        !controller.isScanning && !controller.isSummarizing
+    }
+
+    private func restoreSortOrder() {
+        let preference = PaperTableSortPreference(
+            columnRawValue: storedSortColumn,
+            isAscending: storedSortAscending
+        )
+        sortOrder = preference.sortOrder
+        storedSortColumn = preference.columnRawValue
+        storedSortAscending = preference.isAscending
+    }
+
+    private func persistSortOrder(_ sortOrder: [PaperRowSortComparator]) {
+        let preference = PaperTableSortPreference(sortOrder: sortOrder)
+        storedSortColumn = preference.columnRawValue
+        storedSortAscending = preference.isAscending
     }
 
     private func refreshDisplayState(pruningSelection: Bool = false) {
