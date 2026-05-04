@@ -30,8 +30,7 @@ struct ContentView: View {
                 selection: $selection,
                 sortOrder: $sortOrder,
                 canRetrySelection: !displayState.selectedPapers.isEmpty
-                    && !controller.isScanning
-                    && !controller.isSummarizing,
+                    && canQueueRetry,
                 onRetrySelection: { retry(displayState.selectedPapers) }
             )
             .navigationTitle(filter.title)
@@ -81,7 +80,7 @@ struct ContentView: View {
                         systemImage: "arrow.clockwise"
                     )
                 }
-                .disabled(displayState.selectedPapers.isEmpty || controller.isScanning || controller.isSummarizing)
+                .disabled(displayState.selectedPapers.isEmpty || !canQueueRetry)
                 .help("Queue the selected visible papers for retry.")
 
                 Button {
@@ -152,7 +151,11 @@ struct ContentView: View {
     }
 
     private var canRetry: Bool {
-        !controller.isScanning && !controller.isSummarizing
+        canQueueRetry
+    }
+
+    private var canQueueRetry: Bool {
+        !controller.isScanning
     }
 
     private func restoreSortOrder() {
