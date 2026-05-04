@@ -94,7 +94,7 @@ enum PrimaryPDFSelector {
 
         if isSupplemental(candidate) {
             score -= 90
-            reasons.append("supplement/protocol-like filename or title")
+            reasons.append("supplement/protocol-like metadata or text")
         } else {
             score += 40
             reasons.append("not supplemental-looking")
@@ -126,7 +126,15 @@ enum PrimaryPDFSelector {
             "protocol", "moesm", "mmc", "supinfo", "supp1", "supplemental",
             "figures", "tables", "dataset", "checklist"
         ]
-        return terms.contains { fields.contains($0) }
+        if terms.contains(where: { fields.contains($0) }) {
+            return true
+        }
+
+        guard let leadingText = leadingCachedText(for: candidate) else {
+            return false
+        }
+
+        return hasSupplementalDocumentHeading(leadingText)
     }
 
     private static func significantTokens(in text: String) -> [String] {
@@ -138,5 +146,48 @@ enum PrimaryPDFSelector {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.count >= 4 && !stop.contains($0) }
+    }
+
+    private static func leadingCachedText(for candidate: ZoteroPDFCandidate) -> String? {
+        guard let cacheURL = candidate.cacheURL,
+              let handle = try? FileHandle(forReadingFrom: cacheURL) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        guard let data = try? handle.read(upToCount: 16_384),
+              !data.isEmpty else {
+            return nil
+        }
+
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    }
+
+    private static func hasSupplementalDocumentHeading(_ text: String) -> Bool {
+        let leadingLines = text
+            .components(separatedBy: .newlines)
+            .map {
+                $0.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+            }
+            .filter { !$0.isEmpty }
+            .prefix(25)
+
+        let headingPatterns = [
+            #"^supplement(ary|al)?\b"#,
+            #"^supporting information\b"#,
+            #"^appendix\b"#,
+            #"^web (appendix|supplement)\b"#,
+            #"^online supplement\b"#,
+            #"^(table|figure|fig\.?|data|note|method|methods)\s+s\d+\b"#,
+            #"^additional file\s+\d+\b"#
+        ]
+
+        return leadingLines.contains { line in
+            headingPatterns.contains { pattern in
+                line.range(of: pattern, options: .regularExpression) != nil
+            }
+        }
     }
 }

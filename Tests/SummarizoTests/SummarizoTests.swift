@@ -68,6 +68,50 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(selection.first?.status, .skippedSupplementalOnly)
     }
 
+    func testPrimarySelectorUsesCacheHeadingForArticleLikeSupplementFilename() throws {
+        let root = try temporaryDirectory()
+        let supplementCache = root.appending(path: "supplement-cache")
+        let articleCache = root.appending(path: "article-cache")
+        try """
+        Supplementary Table 1 - Characteristics of coronary artery disease cases and controls in
+        UK Biobank
+        """.write(to: supplementCache, atomically: true, encoding: .utf8)
+        try """
+        letters
+        Genetic analysis in UK Biobank links insulin resistance and transendothelial migration pathways to coronary artery disease
+        The characteristics of UK Biobank participants are presented in Supplementary Table 1.
+        """.write(to: articleCache, atomically: true, encoding: .utf8)
+
+        let title = "Genetic analysis in UK Biobank links insulin resistance and transendothelial migration pathways to coronary artery disease"
+        let supplement = candidate(
+            attachmentKey: "SUPP",
+            attachmentTitle: "Klarin et al. - 2017 - Genetic analysis in UK Biobank links insulin resistance and transendothelial migration pathways to coronary artery disease",
+            filename: "Klarin et al. - 2017 - Genetic analysis in UK Biobank links insulin resistance and transendothelial migration pathways to coronary arter.pdf",
+            readable: true,
+            title: title,
+            cacheURL: supplementCache,
+            fileSize: 478_673
+        )
+        let article = candidate(
+            attachmentKey: "FULLTEXT",
+            attachmentTitle: "Klarin et al. - 2017 - Genetic analysis in UK Biobank links insulin resistance and transendothelial migration pathways to coronary artery disease",
+            filename: "Klarin et al. - 2017 - Genetic analysis in UK Biobank links insulin resistance and transendothelial migration pathways to coronary ar(2).pdf",
+            readable: true,
+            title: title,
+            cacheURL: articleCache,
+            fileSize: 1_535_995
+        )
+
+        let scoredSupplement = PrimaryPDFSelector.score(supplement)
+        let scoredArticle = PrimaryPDFSelector.score(article)
+        let selection = PrimaryPDFSelector.selectPrimaryPDFs(from: [supplement, article])
+
+        XCTAssertLessThan(scoredSupplement.score, scoredArticle.score - 20)
+        XCTAssertTrue(scoredSupplement.selectionReason.contains("supplement/protocol-like metadata or text"))
+        XCTAssertEqual(selection.first?.candidate?.attachmentKey, "FULLTEXT")
+        XCTAssertEqual(selection.first?.status, .queued)
+    }
+
     func testReaderScansChildPDFAndIgnoresDeletedAttachment() throws {
         let root = try temporaryDirectory()
         let storage = root.appending(path: "storage/ATTACH1", directoryHint: .isDirectory)
@@ -1053,7 +1097,10 @@ final class SummarizoTests: XCTestCase {
         attachmentKey: String,
         attachmentTitle: String,
         filename: String,
-        readable: Bool
+        readable: Bool,
+        title: String = "Deep Learning Study",
+        cacheURL: URL? = nil,
+        fileSize: Int64? = 1_000_000
     ) -> ZoteroPDFCandidate {
         ZoteroPDFCandidate(
             libraryID: 1,
@@ -1061,7 +1108,7 @@ final class SummarizoTests: XCTestCase {
             parentItemID: 1,
             parentKey: "PARENT",
             parentItemType: "journalArticle",
-            title: "Deep Learning Study",
+            title: title,
             creators: ["Jane Smith"],
             date: "2024",
             journalAbbreviation: nil,
@@ -1074,11 +1121,11 @@ final class SummarizoTests: XCTestCase {
             linkMode: 1,
             rawPath: "storage:\(filename)",
             resolvedURL: URL(fileURLWithPath: "/tmp/\(filename)"),
-            cacheURL: nil,
+            cacheURL: cacheURL,
             isReadable: readable,
             storageModTime: 1,
             storageHash: nil,
-            fileSize: 1_000_000,
+            fileSize: fileSize,
             fileModificationDate: nil,
             fulltextIndexedPages: nil,
             fulltextTotalPages: nil,
