@@ -7,7 +7,7 @@ private let summaryLLMLog = Logger(
 )
 
 struct SummaryLLMOperations {
-    static let promptVersion = "summary-v3"
+    static let promptVersion = "summary-v4"
 
     let engine: any LLMEngine
     let modelID: String
@@ -633,6 +633,8 @@ struct SummaryLLMOperations {
         - Spend most of the summary on observed findings; keep setup brief.
         - Do not use vague result phrases like "associations were observed", "effects were analyzed", or "findings were validated" when specific findings are available.
         - Do not generalize findings beyond the reported group, condition, treatment, cohort, or outcome.
+        - If a central result comes from a score, equation, model, classifier, simulation, benchmark, or other derived measure, include that fact, name the measure, and do not present it as a directly observed outcome.
+        - If changing an input definition or coding choice changes the result, state that the result depends on that operational definition.
         - Replication, validation, and limitations are not substitutes for primary findings; mention them only after the primary findings are named.
         - State null, failed, mixed, or non-replicated results directly. Do not explain them away with causes like low power, noise, or different samples unless the evidence directly shows that cause.
         - If the paper offers a possible reason for a null or failed result, attribute it as a note from the paper rather than making it the cause.
@@ -641,7 +643,13 @@ struct SummaryLLMOperations {
         - Use cautious verbs such as "measured", "reported", "compared", "estimated", "observed", "was associated with", or "was rated".
         - Avoid broad verbs such as "proved", "showed", "demonstrated", "revolutionized", "confirmed", or "established" unless the partial summaries give direct evidence.
         - If a result depends on a comparison, say what it was compared with.
+        - When reporting "higher", "lower", "increased", "decreased", "near the null", or "different", state the comparison anchor exactly.
+        - Do not change the anchor. Distinguish group comparisons from comparisons between methods, codings, timepoints, or models.
+        - If a paper reports multiple metric types for the same result, keep them separate; do not transfer a description from one metric type to another.
+        - When using phrases like "near the null", "matched", "higher", or "lower", include both the metric type and comparison anchor.
         - If the evidence is limited, keep the conclusion narrow.
+        - When choosing one limitation, prefer the limitation that most changes interpretation of the central result.
+        - Prioritize limitations about derived outcomes, validation/calibration, missing direct outcomes, measurement, or causal interpretation over routine exclusions or sample-size details.
         - Include a limitation only after the central findings, and skip it if space is tight.
         - Do not use phrases like "the authors show" or "this work demonstrates."
         - Do not invent details not present in the partial summaries.
@@ -1140,6 +1148,8 @@ private enum SummaryPrompts {
     - Spend most of the summary on observed findings; keep setup brief.
     - Do not use vague result phrases like "associations were observed", "effects were analyzed", or "findings were validated" when specific findings are available.
     - Do not generalize findings beyond the reported group, condition, treatment, cohort, or outcome.
+    - If a central result comes from a score, equation, model, classifier, simulation, benchmark, or other derived measure, include that fact, name the measure, and do not present it as a directly observed outcome.
+    - If changing an input definition or coding choice changes the result, state that the result depends on that operational definition.
     - Replication, validation, and limitations are not substitutes for primary findings; mention them only after the primary findings are named.
     - State null, failed, mixed, or non-replicated results directly. Do not explain them away with causes like low power, noise, or different samples unless the evidence directly shows that cause.
     - If the paper offers a possible reason for a null or failed result, attribute it as a note from the paper rather than making it the cause.
@@ -1149,7 +1159,13 @@ private enum SummaryPrompts {
     - Avoid broad verbs such as "proved", "showed", "demonstrated", "revolutionized", "confirmed", or "established" unless the excerpt gives direct evidence.
     - When available, include the concrete basis for the result: material, sample, dataset, system, experiment, measurement, comparator, or evaluation method.
     - If a result depends on a comparison, say what it was compared with.
+    - When reporting "higher", "lower", "increased", "decreased", "near the null", or "different", state the comparison anchor exactly.
+    - Do not change the anchor. Distinguish group comparisons from comparisons between methods, codings, timepoints, or models.
+    - If a paper reports multiple metric types for the same result, keep them separate; do not transfer a description from one metric type to another.
+    - When using phrases like "near the null", "matched", "higher", or "lower", include both the metric type and comparison anchor.
     - If the evidence is limited, keep the conclusion narrow.
+    - When choosing one limitation, prefer the limitation that most changes interpretation of the central result.
+    - Prioritize limitations about derived outcomes, validation/calibration, missing direct outcomes, measurement, or causal interpretation over routine exclusions or sample-size details.
     - Do not use phrases like "the authors show" or "this work demonstrates."
     - Ignore appendix prompt transcripts, chatbot conversations, or safety-demo text unless clearly part of the main evidence.
     - If the excerpt is insufficient, return a brief note of what is observable rather than speculation.
