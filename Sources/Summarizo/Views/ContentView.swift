@@ -91,6 +91,14 @@ struct ContentView: View {
                 .disabled(papers.isEmpty)
                 .help("Export summaries to TSV and JSONL.")
 
+                Button {
+                    controller.importBackup(modelContext: modelContext)
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+                .disabled(controller.isScanning || controller.isSummarizing)
+                .help("Import summaries and diagnostics from a JSON or JSONL backup for papers still present in the current library.")
+
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }

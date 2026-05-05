@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftData
+import UniformTypeIdentifiers
 
 @MainActor
 final class LibraryController: ObservableObject {
@@ -124,6 +125,25 @@ final class LibraryController: ObservableObject {
         }
     }
 
+    func importBackup(modelContext: ModelContext) {
+        guard let url = chooseSummaryBackupURL() else { return }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let result = try SummaryImporter.importSummaries(from: url, into: modelContext)
+            dataRevision += 1
+            appendStatus(result.statusLine)
+        } catch {
+            alertMessage = error.localizedDescription
+            appendStatus(error.localizedDescription)
+        }
+    }
+
     private func resolveZoteroDataDirectory() async throws -> URL {
         if let stored = SecurityScopedBookmarkStore.shared.resolvedZoteroDirectory() {
             return stored
@@ -134,6 +154,18 @@ final class LibraryController: ObservableObject {
             return selected
         }
         throw ControllerError.zoteroAccessNotGranted
+    }
+
+    private func chooseSummaryBackupURL() -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = "Import Summary Backup"
+        panel.message = "Choose a Summarizo JSON or JSONL export."
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        let jsonl = UTType(filenameExtension: "jsonl") ?? .json
+        panel.allowedContentTypes = [.json, jsonl]
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     private func scan(dataDirectory: URL, modelContext: ModelContext) async throws {

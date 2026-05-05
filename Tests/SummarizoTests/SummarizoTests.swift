@@ -261,11 +261,65 @@ final class SummarizoTests: XCTestCase {
         XCTAssertFalse(tsv.contains("A\nTitle"))
         XCTAssertTrue(tsv.contains("J Test"))
         XCTAssertTrue(tsv.contains("Line 1 Line 2"))
-        XCTAssertTrue(tsv.contains("\t2023-11-05 12:34:56\n"))
+        XCTAssertTrue(tsv.contains("\t2023-11-05 12:34:56\t"))
 
         let jsonl = try SummaryExporter.jsonlString(rows: [row])
-        XCTAssertTrue(jsonl.contains(#""dateAdded" : "2023-11-05 12:34:56""#))
-        XCTAssertTrue(jsonl.contains(#""journalAbbreviation" : "J\tTest""#))
+        let lines = jsonl.split(separator: "\n")
+        XCTAssertEqual(lines.count, 1)
+        let decoded = try JSONDecoder.summarizo.decode(SummaryExportRow.self, from: Data(lines[0].utf8))
+        XCTAssertEqual(decoded.dateAdded, "2023-11-05 12:34:56")
+        XCTAssertEqual(decoded.journalAbbreviation, "J\tTest")
+    }
+
+    func testExportIncludesDiagnosticBackupFields() throws {
+        var diagnostic = LLMDiagnostic.empty
+        diagnostic.modelID = "model-id"
+        diagnostic.modelName = "Model Name"
+        diagnostic.contextLength = 8192
+        diagnostic.promptTokens = 123
+        diagnostic.generatedTokens = 45
+        diagnostic.locationStrategy = "selector"
+        diagnostic.responsePreview = "Preview"
+
+        let row = backupRow(
+            modelID: "model-id",
+            modelName: "Model Name",
+            promptVersion: "summary-v3",
+            textSource: .pdfKit,
+            sourceFingerprint: "fingerprint",
+            diagnostic: diagnostic
+        )
+
+        let jsonl = try SummaryExporter.jsonlString(rows: [row])
+        let decodedRows = try SummaryImporter.decodeRows(from: Data(jsonl.utf8))
+        XCTAssertEqual(decodedRows.first?.modelID, "model-id")
+        XCTAssertEqual(decodedRows.first?.promptVersion, "summary-v3")
+        XCTAssertEqual(decodedRows.first?.sourceFingerprint, "fingerprint")
+        XCTAssertEqual(decodedRows.first?.diagnostic?.contextLength, 8192)
+        XCTAssertEqual(decodedRows.first?.diagnostic?.promptTokens, 123)
+
+        let tsv = SummaryExporter.tsvString(rows: [row])
+        XCTAssertTrue(tsv.contains("contextLength"))
+        XCTAssertTrue(tsv.contains("8192"))
+        XCTAssertTrue(tsv.contains("fingerprint"))
+    }
+
+    func testImporterDecodesLegacyPrettyPrintedJSONObjects() throws {
+        let encoder = JSONEncoder.summarizo
+        let rowA = backupRow(parentKey: "A", summary: "Summary A")
+        let rowB = backupRow(parentKey: "B", summary: "Summary B")
+        let legacyObjects = try [rowA, rowB].map { row in
+            let data = try encoder.encode(row)
+            return String(data: data, encoding: .utf8) ?? "{}"
+        }.joined(separator: "\n")
+
+        let decoded = try SummaryImporter.decodeRows(from: Data(legacyObjects.utf8))
+        XCTAssertEqual(decoded.map(\.parentKey), ["A", "B"])
+        XCTAssertEqual(decoded.map(\.summary), ["Summary A", "Summary B"])
+
+        let jsonArray = try encoder.encode([rowA, rowB])
+        let decodedArray = try SummaryImporter.decodeRows(from: jsonArray)
+        XCTAssertEqual(decodedArray.map(\.parentKey), ["A", "B"])
     }
 
     func testSummaryThinkingToggleDisablesEngineThinkingAndUsesBoundedJSONOutput() async {
@@ -914,6 +968,76 @@ final class SummarizoTests: XCTestCase {
     }
 
     @MainActor
+    func testImporterRestoresExistingPaperAndSkipsMissingBackupRows() throws {
+        let container = try makeInMemoryModelContainer()
+        let modelContext = ModelContext(container)
+        let paper = displayPaper(parentKey: "RESTORE", title: "Restore", status: .ready, summary: "Bad summary")
+        paper.modelID = "bad-model"
+        paper.modelName = "Bad Model"
+        modelContext.insert(paper)
+        try modelContext.save()
+
+        var diagnostic = LLMDiagnostic.empty
+        diagnostic.modelID = "good-model"
+        diagnostic.modelName = "Good Model"
+        diagnostic.promptVersion = "summary-v3"
+        diagnostic.textSource = .zoteroCache
+        diagnostic.contextLength = 16_384
+        diagnostic.promptTokens = 321
+        let restoredDate = "2025-01-02T03:04:05Z"
+        let existingRow = backupRow(
+            parentKey: "RESTORE",
+            summary: "Restored summary",
+            modelID: "good-model",
+            modelName: "Good Model",
+            promptVersion: "summary-v3",
+            textSource: .zoteroCache,
+            summarizedAt: restoredDate,
+            sourceFingerprint: paper.sourceFingerprint,
+            diagnostic: diagnostic
+        )
+        let missingRow = backupRow(parentKey: "MISSING", summary: "Missing summary")
+
+        let result = try SummaryImporter.importRows([existingRow, missingRow], into: modelContext)
+
+        XCTAssertEqual(result.rowsRead, 2)
+        XCTAssertEqual(result.imported, 1)
+        XCTAssertEqual(result.skippedMissing, 1)
+        XCTAssertEqual(paper.summary, "Restored summary")
+        XCTAssertEqual(paper.status, .ready)
+        XCTAssertEqual(paper.modelID, "good-model")
+        XCTAssertEqual(paper.modelName, "Good Model")
+        XCTAssertEqual(paper.promptVersion, "summary-v3")
+        XCTAssertEqual(paper.textSource, .zoteroCache)
+        XCTAssertEqual(paper.diagnostic.contextLength, 16_384)
+        XCTAssertEqual(paper.diagnostic.promptTokens, 321)
+        XCTAssertEqual(paper.summarizedAt, ISO8601DateFormatter().date(from: restoredDate))
+        XCTAssertEqual(try modelContext.fetch(FetchDescriptor<SummarizedPaper>()).count, 1)
+    }
+
+    @MainActor
+    func testImporterMarksRestoredSummaryStaleWhenFingerprintDiffers() throws {
+        let container = try makeInMemoryModelContainer()
+        let modelContext = ModelContext(container)
+        let paper = displayPaper(parentKey: "STALE", title: "Stale", status: .failed, summary: "Bad summary")
+        modelContext.insert(paper)
+        try modelContext.save()
+
+        let row = backupRow(
+            parentKey: "STALE",
+            summary: "Restored summary",
+            sourceFingerprint: "different-fingerprint"
+        )
+
+        let result = try SummaryImporter.importRows([row], into: modelContext)
+
+        XCTAssertEqual(result.imported, 1)
+        XCTAssertEqual(result.importedAsStale, 1)
+        XCTAssertEqual(paper.summary, "Restored summary")
+        XCTAssertEqual(paper.status, .stale)
+    }
+
+    @MainActor
     func testRetryStartsSummariesWhenIdleAndModelConfigured() async throws {
         let suiteName = "SummarizoTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -1088,6 +1212,55 @@ final class SummarizoTests: XCTestCase {
         paper.updatedAt = updatedAt
         paper.summarizedAt = summarizedAt
         return paper
+    }
+
+    private func backupRow(
+        parentKey: String = "PARENT",
+        summary: String = "Backup summary",
+        status: SummaryStatus = .ready,
+        modelID: String = "",
+        modelName: String = "",
+        promptVersion: String = "",
+        textSource: DocumentTextSource? = nil,
+        summarizedAt: String = "",
+        sourceFingerprint: String = "",
+        diagnostic: LLMDiagnostic? = nil
+    ) -> SummaryExportRow {
+        SummaryExportRow(
+            library: "My Library",
+            libraryID: 1,
+            parentKey: parentKey,
+            attachmentKey: "ATTACH-\(parentKey)",
+            itemType: "journalArticle",
+            title: "Title \(parentKey)",
+            creators: "Jane Smith",
+            date: "2024",
+            dateAdded: "2023-11-05 12:34:56",
+            journalAbbreviation: "J Test",
+            doi: "10.1234/test",
+            url: "https://example.com/\(parentKey)",
+            pdfPath: "/tmp/\(parentKey).pdf",
+            status: status.rawValue,
+            summary: summary,
+            model: modelName,
+            modelID: modelID,
+            modelName: modelName,
+            promptVersion: promptVersion,
+            textSource: textSource?.rawValue ?? "",
+            summarizedAt: summarizedAt,
+            error: "",
+            sourceFingerprint: sourceFingerprint,
+            storageHash: "hash-\(parentKey)",
+            storageModTime: 123,
+            fileSize: 456,
+            fulltextIndexedPages: 10,
+            fulltextTotalPages: 10,
+            fulltextIndexedChars: 20_000,
+            fulltextTotalChars: 20_000,
+            primarySelectionScore: 42,
+            primarySelectionReason: "test",
+            diagnostic: diagnostic
+        )
     }
 
     private func summaryOperations(

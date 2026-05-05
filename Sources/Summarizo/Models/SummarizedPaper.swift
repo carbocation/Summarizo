@@ -232,7 +232,8 @@ final class SummarizedPaper {
     }
 
     func exportRow() -> SummaryExportRow {
-        SummaryExportRow(
+        let rowDiagnostic = diagnostic
+        return SummaryExportRow(
             library: libraryName,
             libraryID: libraryID,
             parentKey: parentKey,
@@ -249,8 +250,23 @@ final class SummarizedPaper {
             status: status.rawValue,
             summary: summary,
             model: modelName ?? "",
+            modelID: modelID ?? "",
+            modelName: modelName ?? "",
+            promptVersion: promptVersion,
+            textSource: textSource?.rawValue ?? "",
             summarizedAt: summarizedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
-            error: errorMessage ?? ""
+            error: errorMessage ?? "",
+            sourceFingerprint: sourceFingerprint,
+            storageHash: storageHash ?? "",
+            storageModTime: storageModTime,
+            fileSize: fileSize,
+            fulltextIndexedPages: fulltextIndexedPages,
+            fulltextTotalPages: fulltextTotalPages,
+            fulltextIndexedChars: fulltextIndexedChars,
+            fulltextTotalChars: fulltextTotalChars,
+            primarySelectionScore: primarySelectionScore,
+            primarySelectionReason: primarySelectionReason,
+            diagnostic: rowDiagnostic
         )
     }
 

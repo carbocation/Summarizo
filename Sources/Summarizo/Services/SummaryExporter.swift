@@ -19,10 +19,21 @@ enum SummaryExporter {
             "library", "libraryID", "parentKey", "attachmentKey", "itemType",
             "title", "creators", "date", "journalAbbreviation", "doi", "url",
             "pdfPath", "status", "summary", "model", "summarizedAt", "error",
-            "dateAdded"
+            "dateAdded", "modelID", "modelName", "promptVersion", "textSource",
+            "contextLength", "promptTokens", "generatedTokens", "stopReason",
+            "thinkingEnabled", "truncationNote", "locationStrategy",
+            "locationSelectorCalls", "locationPromptTokens", "locationGeneratedTokens",
+            "locationDurationSeconds", "locationStartPercent", "locationLengthChars",
+            "locationSelectedStartParagraph", "locationSelectedEndParagraph",
+            "locationFallbackReason", "responsePreview", "diagnosticError",
+            "diagnosticStartedAt", "diagnosticFinishedAt", "sourceFingerprint",
+            "storageHash", "storageModTime", "fileSize", "fulltextIndexedPages",
+            "fulltextTotalPages", "fulltextIndexedChars", "fulltextTotalChars",
+            "primarySelectionScore", "primarySelectionReason", "diagnosticJSON"
         ].joined(separator: "\t")
         let body = rows.map { row in
-            [
+            let diagnostic = row.diagnostic
+            let cells = [
                 row.library,
                 String(row.libraryID),
                 row.parentKey,
@@ -40,14 +51,50 @@ enum SummaryExporter {
                 row.model,
                 row.summarizedAt,
                 row.error,
-                row.dateAdded
-            ].map(escapeTSV).joined(separator: "\t")
+                row.dateAdded,
+                row.modelID,
+                row.modelName,
+                row.promptVersion,
+                row.textSource,
+                text(diagnostic?.contextLength),
+                text(diagnostic?.promptTokens),
+                text(diagnostic?.generatedTokens),
+                diagnostic?.stopReason ?? "",
+                text(diagnostic?.enableThinking),
+                diagnostic?.truncationNote ?? "",
+                diagnostic?.locationStrategy ?? "",
+                text(diagnostic?.locationSelectorCalls),
+                text(diagnostic?.locationPromptTokens),
+                text(diagnostic?.locationGeneratedTokens),
+                text(diagnostic?.locationDurationSeconds),
+                text(diagnostic?.locationStartPercent),
+                text(diagnostic?.locationLengthChars),
+                text(diagnostic?.locationSelectedStartParagraph),
+                text(diagnostic?.locationSelectedEndParagraph),
+                diagnostic?.locationFallbackReason ?? "",
+                diagnostic?.responsePreview ?? "",
+                diagnostic?.error ?? "",
+                diagnostic?.startedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
+                diagnostic?.finishedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
+                row.sourceFingerprint,
+                row.storageHash,
+                text(row.storageModTime),
+                text(row.fileSize),
+                text(row.fulltextIndexedPages),
+                text(row.fulltextTotalPages),
+                text(row.fulltextIndexedChars),
+                text(row.fulltextTotalChars),
+                text(row.primarySelectionScore),
+                row.primarySelectionReason,
+                diagnosticJSONString(row.diagnostic)
+            ]
+            return cells.map(escapeTSV).joined(separator: "\t")
         }
         return ([header] + body).joined(separator: "\n") + "\n"
     }
 
     static func jsonlString(rows: [SummaryExportRow]) throws -> String {
-        let encoder = JSONEncoder.summarizo
+        let encoder = compactJSONEncoder()
         return try rows.map { row in
             let data = try encoder.encode(row)
             return String(data: data, encoding: .utf8) ?? "{}"
@@ -60,6 +107,25 @@ enum SummaryExporter {
             .replacingOccurrences(of: "\r\n", with: " ")
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
+    }
+
+    private static func diagnosticJSONString(_ diagnostic: LLMDiagnostic?) -> String {
+        guard let diagnostic,
+              let data = try? compactJSONEncoder().encode(diagnostic),
+              let text = String(data: data, encoding: .utf8)
+        else { return "" }
+        return text
+    }
+
+    private static func text<T: CustomStringConvertible>(_ value: T?) -> String {
+        value?.description ?? ""
+    }
+
+    private static func compactJSONEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
     }
 
     private static func timestamp() -> String {
