@@ -2,16 +2,49 @@ import AppKit
 import Foundation
 
 enum SummaryExporter {
+    static let exportSchemaVersion = 1
+
     static func export(_ papers: [SummarizedPaper]) throws -> [URL] {
         let timestamp = Self.timestamp()
-        let rows = papers.map { $0.exportRow() }
+        let rows = rowsForExport(
+            papers,
+            batchID: UUID().uuidString,
+            exportedAt: ISO8601DateFormatter().string(from: .now)
+        )
         let tsv = AppPaths.exportsDirectory.appending(path: "summarizo-\(timestamp).tsv")
         let jsonl = AppPaths.exportsDirectory.appending(path: "summarizo-\(timestamp).jsonl")
 
         try tsvString(rows: rows).write(to: tsv, atomically: true, encoding: .utf8)
         try jsonlString(rows: rows).write(to: jsonl, atomically: true, encoding: .utf8)
+        _ = try? ZoteroPluginConfigWriter.writeExportDirectoryConfig()
         NSWorkspace.shared.activateFileViewerSelecting([tsv, jsonl])
         return [tsv, jsonl]
+    }
+
+    static func rowsForExport(
+        _ papers: [SummarizedPaper],
+        batchID: String,
+        exportedAt: String
+    ) -> [SummaryExportRow] {
+        addExportMetadata(
+            to: papers.map { $0.exportRow() },
+            batchID: batchID,
+            exportedAt: exportedAt
+        )
+    }
+
+    static func addExportMetadata(
+        to rows: [SummaryExportRow],
+        batchID: String,
+        exportedAt: String
+    ) -> [SummaryExportRow] {
+        rows.map { row in
+            var row = row
+            row.exportSchemaVersion = exportSchemaVersion
+            row.exportBatchID = batchID
+            row.exportedAt = exportedAt
+            return row
+        }
     }
 
     static func tsvString(rows: [SummaryExportRow]) -> String {
@@ -19,7 +52,8 @@ enum SummaryExporter {
             "library", "libraryID", "parentKey", "attachmentKey", "itemType",
             "title", "creators", "date", "journalAbbreviation", "doi", "url",
             "pdfPath", "status", "summary", "model", "summarizedAt", "error",
-            "dateAdded", "modelID", "modelName", "promptVersion", "textSource",
+            "dateAdded", "exportSchemaVersion", "exportBatchID", "exportedAt",
+            "modelID", "modelName", "promptVersion", "textSource",
             "contextLength", "promptTokens", "generatedTokens", "stopReason",
             "thinkingEnabled", "truncationNote", "locationStrategy",
             "locationSelectorCalls", "locationPromptTokens", "locationGeneratedTokens",
@@ -52,6 +86,9 @@ enum SummaryExporter {
                 row.summarizedAt,
                 row.error,
                 row.dateAdded,
+                text(row.exportSchemaVersion),
+                row.exportBatchID ?? "",
+                row.exportedAt ?? "",
                 row.modelID,
                 row.modelName,
                 row.promptVersion,

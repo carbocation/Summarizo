@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Summarizo Zotero Importer",
+  "version": "0.1.4",
+  "description": "Imports Summarizo strict JSONL exports as tagged Zotero child notes.",
+  "homepage_url": "https://github.com/carbocation/Summarizo",
+  "applications": {
+    "zotero": {
+      "id": "summarizo-importer@carbocation.com",
+      "update_url": "https://github.com/carbocation/Summarizo/releases/latest/download/summarizo-zotero-importer-updates.json",
+      "strict_min_version": "9.0",
+      "strict_max_version": "9.*"
+    }
+  }
+}

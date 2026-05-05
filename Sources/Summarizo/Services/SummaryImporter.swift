@@ -53,28 +53,26 @@ enum SummaryImporter {
             throw SummaryImportError.invalidFormat("the file is not valid UTF-8.")
         }
 
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first else { return [] }
-
         let decoder = JSONDecoder.summarizo
-        if first == "[" {
-            do {
-                return try decoder.decode([SummaryExportRow].self, from: Data(trimmed.utf8))
-            } catch {
-                throw SummaryImportError.invalidFormat(error.localizedDescription)
+        let lines = text
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !lines.isEmpty else { return [] }
+
+        return try lines.enumerated().map { index, line in
+            guard line.first == "{" else {
+                throw SummaryImportError.invalidFormat("line \(index + 1) is not a JSON object.")
             }
-        }
+            guard line.last == "}" else {
+                throw SummaryImportError.invalidFormat("line \(index + 1) is not a complete single-line JSON object.")
+            }
 
-        guard first == "{" else {
-            throw SummaryImportError.invalidFormat("expected a JSON array or one or more JSON objects.")
-        }
-
-        let objects = try topLevelObjectData(in: text)
-        return try objects.map { objectData in
             do {
-                return try decoder.decode(SummaryExportRow.self, from: objectData)
+                return try decoder.decode(SummaryExportRow.self, from: Data(line.utf8))
             } catch {
-                throw SummaryImportError.invalidFormat(error.localizedDescription)
+                throw SummaryImportError.invalidFormat("line \(index + 1): \(error.localizedDescription)")
             }
         }
     }
@@ -190,65 +188,4 @@ enum SummaryImporter {
         values.lazy.compactMap { $0?.nilIfBlank }.first
     }
 
-    private static func topLevelObjectData(in text: String) throws -> [Data] {
-        var objects: [Data] = []
-        var objectStart: String.Index?
-        var depth = 0
-        var isInsideString = false
-        var isEscaped = false
-
-        for index in text.indices {
-            let character = text[index]
-            if isInsideString {
-                if isEscaped {
-                    isEscaped = false
-                } else if character == "\\" {
-                    isEscaped = true
-                } else if character == "\"" {
-                    isInsideString = false
-                }
-                continue
-            }
-
-            if character == "\"" {
-                if depth > 0 {
-                    isInsideString = true
-                }
-                continue
-            }
-
-            if character == "{" {
-                if depth == 0 {
-                    objectStart = index
-                }
-                depth += 1
-                continue
-            }
-
-            if character == "}" {
-                guard depth > 0 else {
-                    throw SummaryImportError.invalidFormat("found a closing brace before an object was opened.")
-                }
-                depth -= 1
-                if depth == 0, let start = objectStart {
-                    let objectText = String(text[start...index])
-                    objects.append(Data(objectText.utf8))
-                    objectStart = nil
-                }
-                continue
-            }
-
-            if depth == 0, !character.isWhitespace {
-                throw SummaryImportError.invalidFormat("expected whitespace between top-level JSON objects.")
-            }
-        }
-
-        guard depth == 0, !isInsideString else {
-            throw SummaryImportError.invalidFormat("the JSON object is incomplete.")
-        }
-        guard !objects.isEmpty else {
-            throw SummaryImportError.invalidFormat("no JSON objects were found.")
-        }
-        return objects
-    }
 }

@@ -4,6 +4,8 @@ struct SidebarView: View {
     @Binding var filter: SummaryFilter
     let counts: SummaryFilterCounts
     let isSummarizing: Bool
+    let zoteroPluginStatus: ZoteroPluginStatus
+    let onPrepareZoteroPluginInstall: () -> Void
 
     var body: some View {
         List(selection: $filter) {
@@ -28,6 +30,13 @@ struct SidebarView: View {
             Section("Model") {
                 Label(isSummarizing ? "Running" : "Idle", systemImage: isSummarizing ? "play.circle" : "pause.circle")
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Zotero") {
+                ZoteroPluginStatusView(
+                    status: zoteroPluginStatus,
+                    onPrepareInstall: onPrepareZoteroPluginInstall
+                )
             }
         }
         .listStyle(.sidebar)

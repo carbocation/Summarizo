@@ -13,6 +13,14 @@ struct ContentView: View {
     @State private var sortOrder = PaperTableSortPreference.defaultSortOrder
     @State private var searchText = ""
     @State private var displayState = PaperDisplayState.empty
+    @State private var zoteroPluginStatus = ZoteroPluginStatus(
+        kind: .unknown,
+        installedVersion: nil,
+        expectedVersion: ZoteroPluginInstaller.pluginVersion,
+        detail: "Zotero profile has not been checked yet."
+    )
+    @State private var zoteroPluginErrorMessage: String?
+    @State private var zoteroPluginInstallPreparation: ZoteroPluginInstallPreparation?
 
     @AppStorage(PaperTableSortPreference.columnKey) private var storedSortColumn = PaperTableSortPreference.defaultColumnRawValue
     @AppStorage(PaperTableSortPreference.ascendingKey) private var storedSortAscending = PaperTableSortPreference.defaultAscending
@@ -22,7 +30,9 @@ struct ContentView: View {
             SidebarView(
                 filter: $filter,
                 counts: displayState.filterCounts,
-                isSummarizing: controller.isSummarizing
+                isSummarizing: controller.isSummarizing,
+                zoteroPluginStatus: zoteroPluginStatus,
+                onPrepareZoteroPluginInstall: prepareZoteroPluginInstall
             )
         } content: {
             PaperTableView(
@@ -119,9 +129,27 @@ struct ContentView: View {
         } message: {
             Text(controller.alertMessage ?? "")
         }
+        .alert(
+            "Zotero Plugin",
+            isPresented: Binding(
+                get: { zoteroPluginErrorMessage != nil },
+                set: { if !$0 { zoteroPluginErrorMessage = nil } }
+            )
+        ) {
+            Button("OK") { zoteroPluginErrorMessage = nil }
+        } message: {
+            Text(zoteroPluginErrorMessage ?? "")
+        }
+        .sheet(item: $zoteroPluginInstallPreparation, onDismiss: refreshZoteroPluginStatus) { preparation in
+            ZoteroPluginInstallInstructionsView(preparation: preparation)
+        }
         .onAppear {
             restoreSortOrder()
             refreshDisplayState()
+            refreshZoteroPluginStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshZoteroPluginStatus()
         }
         .onChange(of: filter) { _, _ in
             refreshDisplayState(pruningSelection: true)
@@ -202,5 +230,20 @@ struct ContentView: View {
         }
 
         displayState = nextState
+    }
+
+    private func refreshZoteroPluginStatus() {
+        zoteroPluginStatus = ZoteroPluginStatusDetector.detect()
+    }
+
+    private func prepareZoteroPluginInstall() {
+        do {
+            let result = try ZoteroPluginInstaller.prepareInstall()
+            zoteroPluginInstallPreparation = result
+            refreshZoteroPluginStatus()
+        } catch {
+            zoteroPluginInstallPreparation = nil
+            zoteroPluginErrorMessage = error.localizedDescription
+        }
     }
 }

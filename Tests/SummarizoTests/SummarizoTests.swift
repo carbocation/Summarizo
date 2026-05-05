@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import Darwin
 @testable import Summarizo
 
 final class SummarizoTests: XCTestCase {
@@ -34,6 +35,182 @@ final class SummarizoTests: XCTestCase {
         try Data().write(to: standard.appending(path: "zotero.sqlite"))
 
         XCTAssertEqual(ZoteroProfileLocator.suggestedDataDirectory(homeDirectory: home), standard)
+    }
+
+    func testZoteroPluginStatusDetectsInstalledAndOutdatedVersions() throws {
+        let home = try temporaryDirectory()
+        let profile = try makeZoteroProfile(in: home)
+        let extensionsJSON = profile.appending(path: "extensions.json")
+
+        try """
+        {
+          "schemaVersion": 37,
+          "addons": [
+            {
+              "id": "\(ZoteroPluginInstaller.pluginID)",
+              "version": "\(ZoteroPluginInstaller.pluginVersion)",
+              "active": true,
+              "userDisabled": false,
+              "appDisabled": false
+            }
+          ]
+        }
+        """.write(to: extensionsJSON, atomically: true, encoding: .utf8)
+
+        var status = ZoteroPluginStatusDetector.detect(homeDirectory: home, statusMarkerURL: nil)
+        XCTAssertEqual(status.kind, .installed)
+        XCTAssertEqual(status.installedVersion, ZoteroPluginInstaller.pluginVersion)
+
+        try """
+        {
+          "schemaVersion": 37,
+          "addons": [
+            {
+              "id": "\(ZoteroPluginInstaller.pluginID)",
+              "version": "0.0.1",
+              "active": true,
+              "userDisabled": false,
+              "appDisabled": false
+            }
+          ]
+        }
+        """.write(to: extensionsJSON, atomically: true, encoding: .utf8)
+
+        status = ZoteroPluginStatusDetector.detect(homeDirectory: home, statusMarkerURL: nil)
+        XCTAssertEqual(status.kind, .outdated)
+        XCTAssertEqual(status.installedVersion, "0.0.1")
+        XCTAssertTrue(status.canPrepareInstall)
+    }
+
+    func testZoteroPluginStatusDetectsMissingAndDevelopmentProxy() throws {
+        let home = try temporaryDirectory()
+        let profile = try makeZoteroProfile(in: home)
+        let missing = ZoteroPluginStatusDetector.detect(homeDirectory: home, statusMarkerURL: nil)
+        XCTAssertEqual(missing.kind, .notInstalled)
+        XCTAssertTrue(missing.canPrepareInstall)
+
+        let source = home.appending(path: "SummarizoPluginSource", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try """
+        {
+          "manifest_version": 2,
+          "name": "Summarizo Zotero Importer",
+          "version": "\(ZoteroPluginInstaller.pluginVersion)",
+          "applications": {
+            "zotero": {
+              "id": "\(ZoteroPluginInstaller.pluginID)"
+            }
+          }
+        }
+        """.write(to: source.appending(path: "manifest.json"), atomically: true, encoding: .utf8)
+
+        let extensions = profile.appending(path: "extensions", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: extensions, withIntermediateDirectories: true)
+        try source.path.write(
+            to: extensions.appending(path: ZoteroPluginInstaller.pluginID),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let proxy = ZoteroPluginStatusDetector.detect(homeDirectory: home, statusMarkerURL: nil)
+        XCTAssertEqual(proxy.kind, .installed)
+        XCTAssertEqual(proxy.installedVersion, ZoteroPluginInstaller.pluginVersion)
+    }
+
+    func testZoteroPluginVersionComparison() {
+        XCTAssertEqual(ZoteroPluginStatusDetector.compareVersions("0.1.0", "0.1.0"), .orderedSame)
+        XCTAssertEqual(ZoteroPluginStatusDetector.compareVersions("0.1.1", "0.1.0"), .orderedDescending)
+        XCTAssertEqual(ZoteroPluginStatusDetector.compareVersions("0.0.9", "0.1.0"), .orderedAscending)
+        XCTAssertEqual(ZoteroPluginStatusDetector.compareVersions("0.1", "0.1.0"), .orderedSame)
+    }
+
+    func testZoteroPluginUnknownStatusStillAllowsInstallPreparation() throws {
+        let home = try temporaryDirectory()
+        let status = ZoteroPluginStatusDetector.detect(homeDirectory: home, statusMarkerURL: nil)
+
+        XCTAssertEqual(status.kind, .unknown)
+        XCTAssertTrue(status.canPrepareInstall)
+        XCTAssertTrue(status.detail.contains("Click to install"))
+    }
+
+    func testZoteroPluginStatusFallsBackToSharedStatusMarkerWhenProfileIsBlocked() throws {
+        let home = try temporaryDirectory()
+        let marker = home.appending(path: "status.json")
+        try """
+        {
+          "pluginID": "\(ZoteroPluginInstaller.pluginID)",
+          "version": "\(ZoteroPluginInstaller.pluginVersion)",
+          "enabled": true,
+          "event": "startup",
+          "lastSeenAt": "2026-05-04T00:00:00Z"
+        }
+        """.write(to: marker, atomically: true, encoding: .utf8)
+
+        let status = ZoteroPluginStatusDetector.detect(homeDirectory: home, statusMarkerURL: marker)
+
+        XCTAssertEqual(status.kind, .installed)
+        XCTAssertEqual(status.installedVersion, ZoteroPluginInstaller.pluginVersion)
+        XCTAssertFalse(status.canPrepareInstall)
+    }
+
+    func testZoteroPluginConfigWriterEmitsExportDirectoryConfig() throws {
+        let root = try temporaryDirectory()
+        let configURL = root.appending(path: "ZoteroPlugin/config.json")
+        let exportDirectory = AppPaths.exportsDirectory
+        let date = Date(timeIntervalSince1970: 0)
+
+        let config = try ZoteroPluginConfigWriter.writeExportDirectoryConfig(
+            exportDirectory: exportDirectory,
+            configURL: configURL,
+            updatedAt: date
+        )
+        let decoded = try JSONDecoder().decode(ZoteroPluginConfig.self, from: Data(contentsOf: configURL))
+
+        XCTAssertEqual(config.schemaVersion, 1)
+        XCTAssertEqual(config.pluginID, ZoteroPluginInstaller.pluginID)
+        XCTAssertEqual(config.exportDirectory, exportDirectory.path)
+        XCTAssertEqual(config.updatedAt, "1970-01-01T00:00:00Z")
+        XCTAssertEqual(decoded, config)
+    }
+
+    func testZoteroPluginConfigWriterCreatesConfigAndExportDirectories() throws {
+        let root = try temporaryDirectory()
+        let exportDirectory = root.appending(path: "Nested/Exports", directoryHint: .isDirectory)
+        let configURL = root.appending(path: "Shared/ZoteroPlugin/config.json")
+
+        try ZoteroPluginConfigWriter.writeExportDirectoryConfig(
+            exportDirectory: exportDirectory,
+            configURL: configURL
+        )
+
+        var isExportDirectory: ObjCBool = false
+        var isConfigDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exportDirectory.path, isDirectory: &isExportDirectory))
+        XCTAssertTrue(isExportDirectory.boolValue)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: configURL.deletingLastPathComponent().path,
+                isDirectory: &isConfigDirectory
+            )
+        )
+        XCTAssertTrue(isConfigDirectory.boolValue)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configURL.path))
+    }
+
+    func testZoteroPluginInstallerWritesCleanCopyWithoutQuarantine() throws {
+        let root = try temporaryDirectory()
+        let source = root.appending(path: "source.xpi")
+        let destination = root.appending(path: "Summarizo Zotero Importer.xpi")
+        let data = Data("plugin payload".utf8)
+
+        try data.write(to: source)
+        try setExtendedAttribute("com.apple.quarantine", value: "0081;00000000;Summarizo;", at: source)
+        XCTAssertTrue(extendedAttributeExists("com.apple.quarantine", at: source))
+
+        try ZoteroPluginInstaller.writeInstallCopy(from: source, to: destination)
+
+        XCTAssertEqual(try Data(contentsOf: destination), data)
+        XCTAssertFalse(extendedAttributeExists("com.apple.quarantine", at: destination))
     }
 
     func testPrimarySelectorPrefersFullTextOverSupplement() {
@@ -304,22 +481,54 @@ final class SummarizoTests: XCTestCase {
         XCTAssertTrue(tsv.contains("fingerprint"))
     }
 
-    func testImporterDecodesLegacyPrettyPrintedJSONObjects() throws {
+    func testExporterAddsBatchMetadata() throws {
+        let row = backupRow(parentKey: "BATCH", summary: "Summary")
+        let rows = SummaryExporter.addExportMetadata(
+            to: [row],
+            batchID: "batch-123",
+            exportedAt: "2026-05-04T12:34:56Z"
+        )
+
+        XCTAssertEqual(rows.first?.exportSchemaVersion, SummaryExporter.exportSchemaVersion)
+        XCTAssertEqual(rows.first?.exportBatchID, "batch-123")
+        XCTAssertEqual(rows.first?.exportedAt, "2026-05-04T12:34:56Z")
+
+        let jsonl = try SummaryExporter.jsonlString(rows: rows)
+        let decodedRows = try SummaryImporter.decodeRows(from: Data(jsonl.utf8))
+        XCTAssertEqual(decodedRows.first?.exportSchemaVersion, SummaryExporter.exportSchemaVersion)
+        XCTAssertEqual(decodedRows.first?.exportBatchID, "batch-123")
+        XCTAssertEqual(decodedRows.first?.exportedAt, "2026-05-04T12:34:56Z")
+
+        let tsv = SummaryExporter.tsvString(rows: rows)
+        XCTAssertTrue(tsv.contains("exportSchemaVersion"))
+        XCTAssertTrue(tsv.contains("batch-123"))
+    }
+
+    func testImporterDecodesStrictJSONLOnly() throws {
+        let rowA = backupRow(parentKey: "A", summary: "Summary A")
+        let rowB = backupRow(parentKey: "B", summary: "Summary B")
+        let strictJSONL = try SummaryExporter.jsonlString(rows: [rowA, rowB])
+
+        let decoded = try SummaryImporter.decodeRows(from: Data(("\n" + strictJSONL + "\n").utf8))
+        XCTAssertEqual(decoded.map(\.parentKey), ["A", "B"])
+        XCTAssertEqual(decoded.map(\.summary), ["Summary A", "Summary B"])
+    }
+
+    func testImporterRejectsArraysAndMultilineObjects() throws {
         let encoder = JSONEncoder.summarizo
         let rowA = backupRow(parentKey: "A", summary: "Summary A")
         let rowB = backupRow(parentKey: "B", summary: "Summary B")
-        let legacyObjects = try [rowA, rowB].map { row in
+        let multilineObjects = try [rowA, rowB].map { row in
             let data = try encoder.encode(row)
             return String(data: data, encoding: .utf8) ?? "{}"
         }.joined(separator: "\n")
 
-        let decoded = try SummaryImporter.decodeRows(from: Data(legacyObjects.utf8))
-        XCTAssertEqual(decoded.map(\.parentKey), ["A", "B"])
-        XCTAssertEqual(decoded.map(\.summary), ["Summary A", "Summary B"])
+        XCTAssertThrowsError(try SummaryImporter.decodeRows(from: Data(multilineObjects.utf8)))
 
         let jsonArray = try encoder.encode([rowA, rowB])
-        let decodedArray = try SummaryImporter.decodeRows(from: jsonArray)
-        XCTAssertEqual(decodedArray.map(\.parentKey), ["A", "B"])
+        XCTAssertThrowsError(try SummaryImporter.decodeRows(from: jsonArray))
+
+        XCTAssertThrowsError(try SummaryImporter.decodeRows(from: Data("not-json\n".utf8)))
     }
 
     func testSummaryThinkingToggleDisablesEngineThinkingAndUsesBoundedJSONOutput() async {
@@ -1344,6 +1553,43 @@ final class SummarizoTests: XCTestCase {
             .appending(path: "SummarizoTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func makeZoteroProfile(in home: URL) throws -> URL {
+        let appSupport = home
+            .appending(path: "Library", directoryHint: .isDirectory)
+            .appending(path: "Application Support", directoryHint: .isDirectory)
+            .appending(path: "Zotero", directoryHint: .isDirectory)
+        let profile = appSupport
+            .appending(path: "Profiles", directoryHint: .isDirectory)
+            .appending(path: "abc.default", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        try """
+        [Profile0]
+        Name=default
+        IsRelative=1
+        Path=Profiles/abc.default
+        Default=1
+        """.write(to: appSupport.appending(path: "profiles.ini"), atomically: true, encoding: .utf8)
+        try Data().write(to: profile.appending(path: "prefs.js"))
+        return profile
+    }
+
+    private func setExtendedAttribute(_ name: String, value: String, at url: URL) throws {
+        let result = value.withCString { valuePointer in
+            url.path.withCString { pathPointer in
+                setxattr(pathPointer, name, valuePointer, strlen(valuePointer), 0, 0)
+            }
+        }
+        if result != 0 {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private func extendedAttributeExists(_ name: String, at url: URL) -> Bool {
+        url.path.withCString { pathPointer in
+            getxattr(pathPointer, name, nil, 0, 0, 0) >= 0
+        }
     }
 
     private static let fixtureSchema = """

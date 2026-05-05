@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var showModelPicker = false
     @State private var zoteroPath = ""
     @State private var alertMessage: String?
+    @State private var zoteroPluginInstallPreparation: ZoteroPluginInstallPreparation?
 
     private let modelLibrary = ModelLibrary.shared
 
@@ -28,6 +29,13 @@ struct SettingsView: View {
                 }
                 Text(zoteroHelpText)
                     .foregroundStyle(.secondary)
+
+                Button {
+                    prepareZoteroPluginInstall()
+                } label: {
+                    Label("Install Zotero Plugin...", systemImage: "puzzlepiece.extension")
+                }
+                .help("Copy and reveal the bundled Summarizo Zotero plugin for installation through Zotero's Plugins window.")
             }
 
             Section("Model") {
@@ -101,6 +109,9 @@ struct SettingsView: View {
             )
             .frame(width: 760, height: 720)
         }
+        .sheet(item: $zoteroPluginInstallPreparation) { preparation in
+            ZoteroPluginInstallInstructionsView(preparation: preparation)
+        }
         .alert(
             "Settings",
             isPresented: Binding(
@@ -157,6 +168,16 @@ struct SettingsView: View {
                 zoteroPath = url.path
             }
         } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    private func prepareZoteroPluginInstall() {
+        do {
+            let result = try ZoteroPluginInstaller.prepareInstall()
+            zoteroPluginInstallPreparation = result
+        } catch {
+            zoteroPluginInstallPreparation = nil
             alertMessage = error.localizedDescription
         }
     }

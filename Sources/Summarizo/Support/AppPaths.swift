@@ -33,6 +33,26 @@ enum AppPaths {
         directory(named: "Diagnostics")
     }
 
+    static var zoteroPluginInstallerDirectory: URL {
+        directory(named: "ZoteroPlugin")
+    }
+
+    static var zoteroPluginSharedDirectory: URL {
+        let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: sharedGroupID)
+            ?? applicationSupportDirectory
+        let dir = root.appending(path: "ZoteroPlugin", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var zoteroPluginConfigURL: URL {
+        zoteroPluginSharedDirectory.appending(path: "config.json")
+    }
+
+    static var zoteroPluginStatusURL: URL {
+        zoteroPluginSharedDirectory.appending(path: "status.json")
+    }
+
     static var modelsDirectory: URL {
         let dir = ModelStorage.modelsDirectory(
             sharedGroupIdentifier: sharedGroupID,
@@ -53,6 +73,7 @@ enum AppPaths {
             ocrResultsDirectory,
             exportsDirectory,
             diagnosticsDirectory,
+            zoteroPluginInstallerDirectory,
             modelsDirectory
         ] {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

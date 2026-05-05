@@ -11,6 +11,7 @@ struct SummarizoApp: App {
     init() {
         do {
             try AppPaths.ensureDirectories()
+            _ = try? ZoteroPluginConfigWriter.writeExportDirectoryConfig()
             let schema = Schema([SummarizedPaper.self])
             let configuration = ModelConfiguration(schema: schema, url: AppPaths.swiftDataStoreURL)
             modelContainer = try ModelContainer(for: schema, configurations: [configuration])

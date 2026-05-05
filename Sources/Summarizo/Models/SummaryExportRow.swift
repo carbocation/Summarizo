@@ -10,6 +10,9 @@ struct SummaryExportRow: Codable, Sendable {
     var creators: String
     var date: String
     var dateAdded: String = ""
+    var exportSchemaVersion: Int?
+    var exportBatchID: String?
+    var exportedAt: String?
     var journalAbbreviation: String
     var doi: String
     var url: String
@@ -45,6 +48,9 @@ struct SummaryExportRow: Codable, Sendable {
         creators: String,
         date: String,
         dateAdded: String = "",
+        exportSchemaVersion: Int? = nil,
+        exportBatchID: String? = nil,
+        exportedAt: String? = nil,
         journalAbbreviation: String,
         doi: String,
         url: String,
@@ -79,6 +85,9 @@ struct SummaryExportRow: Codable, Sendable {
         self.creators = creators
         self.date = date
         self.dateAdded = dateAdded
+        self.exportSchemaVersion = exportSchemaVersion
+        self.exportBatchID = exportBatchID
+        self.exportedAt = exportedAt
         self.journalAbbreviation = journalAbbreviation
         self.doi = doi
         self.url = url
@@ -116,6 +125,9 @@ struct SummaryExportRow: Codable, Sendable {
         creators = try container.decodeStringIfPresent(forKey: .creators)
         date = try container.decodeStringIfPresent(forKey: .date)
         dateAdded = try container.decodeStringIfPresent(forKey: .dateAdded)
+        exportSchemaVersion = try container.decodeFlexibleIntIfPresent(forKey: .exportSchemaVersion)
+        exportBatchID = try container.decodeIfPresent(String.self, forKey: .exportBatchID)
+        exportedAt = try container.decodeIfPresent(String.self, forKey: .exportedAt)
         journalAbbreviation = try container.decodeStringIfPresent(forKey: .journalAbbreviation)
         doi = try container.decodeStringIfPresent(forKey: .doi)
         url = try container.decodeStringIfPresent(forKey: .url)
