@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/carbocation/CarbocationLocalLLM.git",
       "state" : {
-        "revision" : "48a7c12aa40e53ad7247b166480689cd53231f9f",
-        "version" : "0.11.0"
+        "revision" : "e648e391feb6d09ae08c0721f125e6a4a33a1756",
+        "version" : "0.12.0"
       }
     },
     {

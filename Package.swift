@@ -11,7 +11,7 @@ let package = Package(
         .executable(name: "Summarizo", targets: ["Summarizo"])
     ],
     dependencies: [
-        .package(url: "https://github.com/carbocation/CarbocationLocalLLM.git", exact: "0.11.0")
+        .package(url: "https://github.com/carbocation/CarbocationLocalLLM.git", exact: "0.12.0")
     ],
     targets: [
         .executableTarget(
@@ -19,7 +19,7 @@ let package = Package(
             dependencies: [
                 .product(name: "CarbocationLocalLLM", package: "CarbocationLocalLLM"),
                 .product(name: "CarbocationLocalLLMRuntime", package: "CarbocationLocalLLM"),
-                .product(name: "CarbocationLocalLLMUI", package: "CarbocationLocalLLM")
+                .product(name: "CarbocationLocalLLMRuntimeUI", package: "CarbocationLocalLLM")
             ],
             resources: [
                 .process("Resources")

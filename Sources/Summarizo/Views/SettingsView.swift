@@ -91,13 +91,11 @@ struct SettingsView: View {
                 ?? ""
         }
         .sheet(isPresented: $showModelPicker) {
-            ModelLibraryPickerView(
+            LocalLLMModelConfigurationView(
                 library: modelLibrary,
                 selectedModelID: $selectedModelID,
                 title: "Choose a Summary Model",
                 confirmTitle: "Use Model",
-                systemModels: LocalLLMEngine.availableSystemModels(),
-                calibrationAdapter: calibrationAdapter,
                 onModelDeleted: { model in
                     if selectedModelID == model.id.uuidString {
                         selectedModelID = ""
@@ -107,7 +105,7 @@ struct SettingsView: View {
                     showModelPicker = false
                 }
             )
-            .frame(width: 760, height: 720)
+            .frame(width: 760, height: 820)
         }
         .sheet(item: $zoteroPluginInstallPreparation) { preparation in
             ZoteroPluginInstallInstructionsView(preparation: preparation)
@@ -148,17 +146,6 @@ struct SettingsView: View {
 
         let standard = ZoteroProfileLocator.standardDataDirectory().path
         return "No local Zotero data directory was detected at \(standard). Choose the folder containing zotero.sqlite and storage."
-    }
-
-    private var calibrationAdapter: ModelLibraryPickerCalibrationAdapter {
-        ModelLibraryPickerCalibrationAdapter(
-            runtimeFingerprint: LocalLLMEngine.contextCalibrationRuntimeFingerprint(),
-            calibrate: { model, progress in
-                try await LocalLLMEngine.calibrateContext(for: model, in: modelLibrary) { value in
-                    await MainActor.run { progress(value) }
-                }
-            }
-        )
     }
 
     private func chooseZoteroDirectory() {

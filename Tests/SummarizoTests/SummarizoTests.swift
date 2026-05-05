@@ -623,7 +623,7 @@ final class SummarizoTests: XCTestCase {
     }
 
     @MainActor
-    func testLocalLLMLoadPlanUsesCalibratedContextInAutoMode() async throws {
+    func testLocalLLMLoadPlanUsesConfiguredAutoContextLimitBoundedByCalibration() async throws {
         let suiteName = "SummarizoTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -653,6 +653,17 @@ final class SummarizoTests: XCTestCase {
             probedTiers: []
         ))
 
+        let defaultPlan = await LocalLLMEngine.loadPlan(
+            from: model.id.uuidString,
+            in: library,
+            defaults: defaults,
+            refreshingLibrary: false,
+            calibrationStore: store
+        )
+        XCTAssertEqual(try XCTUnwrap(defaultPlan).requestedContext, LlamaContextPolicy.defaultAutoCap)
+
+        defaults.set(262_144, forKey: LlamaContextPreferenceKeys().autoContextLimit)
+
         let maybePlan = await LocalLLMEngine.loadPlan(
             from: model.id.uuidString,
             in: library,
@@ -665,7 +676,7 @@ final class SummarizoTests: XCTestCase {
         XCTAssertEqual(plan.requestedContext, 131_072)
     }
 
-    func testSummaryContextPolicyStartsAutoAtHalfOfInstalledContextButHonorsManual() {
+    func testSummaryContextPolicyUsesPlannedContextBeforeResourceFallback() {
         let plan = LocalLLMLoadPlan(
             selection: .installed(UUID()),
             displayName: "Large Context Model",
@@ -678,20 +689,15 @@ final class SummarizoTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            SummaryContextPolicy.requestedContext(for: plan, mode: .auto),
-            131_072
-        )
-        XCTAssertEqual(
-            SummaryContextPolicy.requestedContext(for: plan, mode: .manual),
+            SummaryContextPolicy.requestedContext(for: plan),
             262_144
         )
         XCTAssertEqual(
-            SummaryContextPolicy.requestedContext(for: plan, mode: .manual, override: 32_768),
+            SummaryContextPolicy.requestedContext(for: plan, override: 32_768),
             32_768
         )
         XCTAssertEqual(SummaryContextPolicy.fallbackContext(below: 65_536), 32_768)
         XCTAssertNil(SummaryContextPolicy.fallbackContext(below: 16_384))
-        XCTAssertEqual(SummaryContextPolicy.automaticStartingContext(for: 8_192), 8_192)
         XCTAssertTrue(SummaryContextPolicy.isDecodeResourceFailure("llama_decode failed."))
     }
 

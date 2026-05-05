@@ -115,7 +115,6 @@ actor SummaryJobRunner {
         let loadPlan = try await localLLMLoadPlan(for: selectedModelID)
         let requestedContext = SummaryContextPolicy.requestedContext(
             for: loadPlan,
-            mode: LlamaContextPolicy.currentMode(),
             override: requestedContextOverride
         )
         let expectedContext = SummaryContextPolicy.expectedLoadedContext(
@@ -207,18 +206,13 @@ enum SummaryContextPolicy {
 
     static func requestedContext(
         for plan: LocalLLMLoadPlan,
-        mode: LlamaContextMode,
         override: Int? = nil
     ) -> Int {
         let planned = max(plan.requestedContext, LlamaContextPolicy.minimumContext)
         if let override {
             return min(max(override, LlamaContextPolicy.minimumContext), planned)
         }
-
-        guard case .installed = plan.selection, mode == .auto else {
-            return planned
-        }
-        return automaticStartingContext(for: planned)
+        return planned
     }
 
     static func expectedLoadedContext(
@@ -235,12 +229,6 @@ enum SummaryContextPolicy {
     static func fallbackContext(below context: Int) -> Int? {
         guard context > resourceRetryFloor else { return nil }
         return max(resourceRetryFloor, context / 2)
-    }
-
-    static func automaticStartingContext(for plannedContext: Int) -> Int {
-        let planned = max(plannedContext, LlamaContextPolicy.minimumContext)
-        guard planned > resourceRetryFloor else { return planned }
-        return max(resourceRetryFloor, planned / 2)
     }
 
     static func isDecodeResourceFailure(_ error: String?) -> Bool {

@@ -72,14 +72,11 @@ final class LibraryController: ObservableObject {
         recentStatusLines = []
         summaryTask = Task { [weak self] in
             guard let self else { return }
-            defer {
-                Task { @MainActor in
-                    self.isSummarizing = false
-                    self.statusLine = nil
-                    self.summaryTask = nil
-                }
-            }
             await self.runSummaries(modelContext: modelContext)
+            await self.runner.unload()
+            self.isSummarizing = false
+            self.statusLine = nil
+            self.summaryTask = nil
         }
     }
 

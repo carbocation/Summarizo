@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		5A0000000000000000000101 /* CarbocationLocalLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000501 /* CarbocationLocalLLM */; };
 		5A0000000000000000000102 /* CarbocationLocalLLMRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000502 /* CarbocationLocalLLMRuntime */; };
-		5A0000000000000000000103 /* CarbocationLocalLLMUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000503 /* CarbocationLocalLLMUI */; };
+		5A0000000000000000000104 /* CarbocationLocalLLMRuntimeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000505 /* CarbocationLocalLLMRuntimeUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,7 +36,7 @@
 			files = (
 				5A0000000000000000000101 /* CarbocationLocalLLM in Frameworks */,
 				5A0000000000000000000102 /* CarbocationLocalLLMRuntime in Frameworks */,
-				5A0000000000000000000103 /* CarbocationLocalLLMUI in Frameworks */,
+				5A0000000000000000000104 /* CarbocationLocalLLMRuntimeUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -95,7 +95,7 @@
 			packageProductDependencies = (
 				5A0000000000000000000501 /* CarbocationLocalLLM */,
 				5A0000000000000000000502 /* CarbocationLocalLLMRuntime */,
-				5A0000000000000000000503 /* CarbocationLocalLLMUI */,
+				5A0000000000000000000505 /* CarbocationLocalLLMRuntimeUI */,
 			);
 			productName = Summarizo;
 			productReference = 5A0000000000000000000201 /* Summarizo.app */;
@@ -310,7 +310,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = YTU97Z787R;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -323,7 +323,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.4;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lsqlite3",
@@ -344,7 +344,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Summarizo.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = YTU97Z787R;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -357,7 +357,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.4;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lsqlite3",
@@ -401,7 +401,7 @@
 			repositoryURL = "https://github.com/carbocation/CarbocationLocalLLM.git";
 			requirement = {
 				kind = exactVersion;
-				version = 0.11.0;
+				version = 0.12.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -417,10 +417,10 @@
 			package = 5A0000000000000000000504 /* XCRemoteSwiftPackageReference "CarbocationLocalLLM" */;
 			productName = CarbocationLocalLLMRuntime;
 		};
-		5A0000000000000000000503 /* CarbocationLocalLLMUI */ = {
+		5A0000000000000000000505 /* CarbocationLocalLLMRuntimeUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 5A0000000000000000000504 /* XCRemoteSwiftPackageReference "CarbocationLocalLLM" */;
-			productName = CarbocationLocalLLMUI;
+			productName = CarbocationLocalLLMRuntimeUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
