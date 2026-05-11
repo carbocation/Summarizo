@@ -174,7 +174,14 @@ struct ContentView: View {
 
     private func openPDF(_ paper: SummarizedPaper) {
         guard let path = paper.pdfPath else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        let url = URL(fileURLWithPath: path)
+        let didOpen = SecurityScopedBookmarkStore.shared.withGrantedFileAccess {
+            NSWorkspace.shared.open(url)
+        }
+
+        if !didOpen {
+            controller.alertMessage = "Summarizo could not open the PDF at \(path). Check that the Zotero data directory or linked attachment root is still granted in Settings."
+        }
     }
 
     private func retry(_ paper: SummarizedPaper) {

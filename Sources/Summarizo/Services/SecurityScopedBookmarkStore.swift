@@ -59,6 +59,25 @@ final class SecurityScopedBookmarkStore: ObservableObject {
         resolvedURL(forKey: linkedRootKey)
     }
 
+    func withGrantedFileAccess<T>(_ operation: () throws -> T) rethrows -> T {
+        let urls = [
+            resolvedZoteroDirectory(),
+            resolvedLinkedAttachmentRoot()
+        ].compactMap { $0 }
+
+        let scopedAccess = urls.map { url in
+            (url, url.startAccessingSecurityScopedResource())
+        }
+
+        defer {
+            for (url, didAccess) in scopedAccess where didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return try operation()
+    }
+
     func chooseLinkedAttachmentRoot() throws -> URL? {
         let panel = NSOpenPanel()
         panel.title = "Choose Linked Attachment Root"

@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/carbocation/CarbocationLocalLLM.git",
       "state" : {
-        "revision" : "e648e391feb6d09ae08c0721f125e6a4a33a1756",
-        "version" : "0.12.0"
+        "revision" : "bae76bb6910d7eb81221c5b6e9a1f972586c1fa9",
+        "version" : "0.23.0"
       }
     },
     {
@@ -25,6 +25,15 @@
       "state" : {
         "revision" : "0aeefadec459ce8e11a333769950fb86183aca43",
         "version" : "2.3.5"
+      }
+    },
+    {
+      "identity" : "swiftsoup",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/scinfu/SwiftSoup.git",
+      "state" : {
+        "revision" : "dee225a3da7b68d34936abc4dc8f34f2264db647",
+        "version" : "2.9.6"
       }
     }
   ],

@@ -11,7 +11,7 @@ let package = Package(
         .executable(name: "Summarizo", targets: ["Summarizo"])
     ],
     dependencies: [
-        .package(url: "https://github.com/carbocation/CarbocationLocalLLM.git", exact: "0.12.0")
+        .package(url: "https://github.com/carbocation/CarbocationLocalLLM.git", exact: "0.23.0")
     ],
     targets: [
         .executableTarget(
